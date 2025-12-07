@@ -12,8 +12,8 @@
   <div class="shell">
     <div class="banned hidden" id="bannedScreen">
       <div class="banned-card">
-        <div class="banned-title">ТЫ ЗАБАНЕН</div>
-        <div class="muted">Доступ ограничен администратором.</div>
+        <div class="banned-title">ПОШЁЛ НА ХУЙ</div>
+        <div class="muted">Ты забанен, хуесос</div>
       </div>
     </div>
     <header class="top">
@@ -314,6 +314,10 @@
       if (!uid) return;
       if (state.banned) {
         alert('Доступ запрещён.');
+        return;
+      }
+      if (!state.cartCount) {
+        alert('Корзина пуста.');
         return;
       }
       const contact = els.contact.value.trim() || (state.user?.username ? '@' + state.user.username : '');

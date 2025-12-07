@@ -503,6 +503,8 @@ def api_cart_checkout() -> Any:
         subtotal = product["price"] * qty
         total += subtotal
         items.append({"product": product, "qty": qty, "subtotal": subtotal})
+    if not items:
+        return jsonify({"ok": False, "error": "cart_empty"}), 400
 
     _log_event(
         "checkout",
