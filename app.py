@@ -154,6 +154,28 @@ def send_message_sync(chat_id: int, text: str, reply_markup: Any | None = None) 
         return False
 
 
+def notify_admin(text: str) -> bool:
+    """Send message to admin; fallback to direct HTTP if Telegram client fails."""
+    if not ADMIN_CHAT_ID:
+        return False
+
+    if send_message_sync(chat_id=ADMIN_CHAT_ID, text=text):
+        return True
+
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": ADMIN_CHAT_ID, "text": text},
+            timeout=10,
+        )
+        if resp.ok:
+            return True
+        logger.warning("Fallback sendMessage failed: %s %s", resp.status_code, resp.text)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fallback sendMessage exception: %s", exc)
+    return False
+
+
 def _make_thumbnail(image_url: str, product_id: int, max_size: int = 600) -> str | None:
     """Fetch image_url and create a resized thumbnail; return static path or None."""
     try:
@@ -489,7 +511,7 @@ def api_cart_checkout() -> Any:
         lines.append(f"Итого: {int(total)}₽")
         if note:
             lines.append(f"Комментарий: {note}")
-        if not send_message_sync(chat_id=ADMIN_CHAT_ID, text="\n".join(lines)):
+        if not notify_admin("\n".join(lines)):
             logger.warning("Failed to notify admin about checkout for user %s", user_id)
 
     carts[int(user_id)] = {}
