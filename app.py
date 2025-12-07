@@ -1,10 +1,14 @@
 import asyncio
+import io
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 
+import requests
 from flask import Flask, abort, jsonify, request, send_from_directory
+from PIL import Image
 from telegram import (
     Bot,
     InlineKeyboardButton,
@@ -49,6 +53,8 @@ request_client = HTTPXRequest(
 )
 bot = Bot(token=BOT_TOKEN, request=request_client)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+THUMBS_DIR = Path(app.static_folder) / "thumbs"
+THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== In-memory data store (demo) =====
 categories: List[Dict[str, Any]] = [
@@ -65,6 +71,7 @@ products: List[Dict[str, Any]] = [
         "price": 5990,
         "category_id": 2,
         "image_url": "/static/img/hoodie.svg",
+        "thumb_url": "/static/img/hoodie.svg",
         "description": "Плотный футер, удлинённый крой.",
     },
     {
@@ -73,6 +80,7 @@ products: List[Dict[str, Any]] = [
         "price": 1990,
         "category_id": 1,
         "image_url": "/static/img/tshirt.svg",
+        "thumb_url": "/static/img/tshirt.svg",
         "description": "100% хлопок, оверсайз.",
     },
     {
@@ -81,6 +89,7 @@ products: List[Dict[str, Any]] = [
         "price": 8990,
         "category_id": 3,
         "image_url": "/static/img/sneakers.svg",
+        "thumb_url": "/static/img/sneakers.svg",
         "description": "Лёгкие, нескользящая подошва.",
     },
     {
@@ -89,6 +98,7 @@ products: List[Dict[str, Any]] = [
         "price": 4990,
         "category_id": 4,
         "image_url": "/static/img/bag.svg",
+        "thumb_url": "/static/img/bag.svg",
         "description": "14\", защита от влаги, скрытый карман.",
     },
 ]
@@ -130,6 +140,23 @@ def send_message_sync(chat_id: int, text: str, reply_markup: Any | None = None) 
             logger.exception("Send message failed: %s", exc)
 
     asyncio.run(_send())
+
+
+def _make_thumbnail(image_url: str, product_id: int, max_size: int = 600) -> str | None:
+    """Fetch image_url and create a resized thumbnail; return static path or None."""
+    try:
+        resp = requests.get(image_url, timeout=15)
+        resp.raise_for_status()
+        img = Image.open(io.BytesIO(resp.content))
+        img = img.convert("RGB")
+        img.thumbnail((max_size, max_size))
+        filename = f"product_{product_id}.jpg"
+        out_path = THUMBS_DIR / filename
+        img.save(out_path, format="JPEG", optimize=True, quality=82)
+        return f"/static/thumbs/{filename}"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Thumbnail generation failed for %s: %s", image_url, exc)
+        return None
 
 
 def _verify_secret_token() -> None:
@@ -232,6 +259,32 @@ def api_categories() -> Any:
     return jsonify(new_cat), 201
 
 
+@app.route("/api/categories/<int:cat_id>", methods=["PATCH", "DELETE"])
+def api_category_update(cat_id: int) -> Any:
+    _require_admin()
+    category = next((c for c in categories if c["id"] == cat_id), None)
+    if not category:
+        return jsonify({"ok": False, "error": "category not found"}), 404
+
+    if request.method == "PATCH":
+        body = request.get_json(force=True, silent=True) or {}
+        name = (body.get("name") or "").strip()
+        icon = (body.get("icon") or "").strip()
+        if name:
+            category["name"] = name
+        category["icon"] = icon or None
+        _log_event("category_updated", payload=category)
+        return jsonify(category)
+
+    # DELETE
+    categories[:] = [c for c in categories if c["id"] != cat_id]
+    for product in products:
+        if product["category_id"] == cat_id:
+            product["category_id"] = None
+    _log_event("category_deleted", payload={"id": cat_id})
+    return jsonify({"ok": True})
+
+
 @app.route("/api/products", methods=["GET", "POST"])
 def api_products() -> Any:
     if request.method == "GET":
@@ -247,6 +300,7 @@ def api_products() -> Any:
     price = body.get("price")
     category_id = body.get("category_id")
     image_url = (body.get("image_url") or "").strip() or "/static/img/placeholder.svg"
+    thumb_url = (body.get("thumb_url") or "").strip()
     description = (body.get("description") or "").strip()
 
     if not title or price is None or category_id is None:
@@ -258,8 +312,15 @@ def api_products() -> Any:
         "price": float(price),
         "category_id": int(category_id),
         "image_url": image_url,
+        "thumb_url": thumb_url,
         "description": description,
     }
+    if not new_product["thumb_url"]:
+        generated = _make_thumbnail(image_url=image_url, product_id=new_product["id"])
+        if generated:
+            new_product["thumb_url"] = generated
+        else:
+            new_product["thumb_url"] = image_url
     products.append(new_product)
     _log_event("product_created", payload=new_product)
     return jsonify(new_product), 201
@@ -317,15 +378,45 @@ def api_cart_checkout() -> Any:
     user_id = body.get("user_id")
     contact = (body.get("contact") or "").strip()
     note = (body.get("note") or "").strip()
+    tg_username = (body.get("tg_username") or "").strip()
+    tg_name = (body.get("tg_name") or "").strip()
     if not user_id:
         return jsonify({"ok": False, "error": "user_id required"}), 400
 
     cart = carts.get(int(user_id), {})
+    items: List[Dict[str, Any]] = []
+    total = 0.0
+    for product_id, qty in cart.items():
+        product = _get_product(product_id)
+        if not product:
+            continue
+        subtotal = product["price"] * qty
+        total += subtotal
+        items.append({"product": product, "qty": qty, "subtotal": subtotal})
+
     _log_event(
         "checkout",
         user_id=int(user_id),
         payload={"contact": contact, "note": note, "items": cart},
     )
+
+    if ADMIN_CHAT_ID:
+        lines = [
+            "🛒 Новый заказ",
+            f"user_id: {user_id}",
+            f"tg: @{tg_username}" if tg_username else "tg: не указал",
+            f"контакт: {contact or '—'}",
+        ]
+        if tg_name:
+            lines.append(f"имя: {tg_name}")
+        lines.append("Позиций:")
+        for row in items:
+            lines.append(f"- {row['product']['title']} x{row['qty']} = {int(row['subtotal'])}₽")
+        lines.append(f"Итого: {int(total)}₽")
+        if note:
+            lines.append(f"Комментарий: {note}")
+        send_message_sync(chat_id=ADMIN_CHAT_ID, text="\n".join(lines))
+
     carts[int(user_id)] = {}
     return jsonify({"ok": True, "message": "Заказ принят. Менеджер свяжется в Telegram."})
 

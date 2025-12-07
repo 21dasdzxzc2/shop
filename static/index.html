@@ -79,6 +79,24 @@
     </div>
   </div>
 
+  <div class="modal hidden" id="productModal">
+    <div class="modal-backdrop" id="closeProduct"></div>
+    <div class="modal-card">
+      <div class="modal-image">
+        <img id="modalImage" src="" alt="">
+      </div>
+      <div class="modal-body">
+        <div class="modal-title" id="modalTitle"></div>
+        <div class="muted small" id="modalDesc"></div>
+        <div class="modal-price" id="modalPrice"></div>
+        <div class="modal-actions">
+          <button class="pill accent" id="modalAdd">В корзину</button>
+          <button class="pill ghost" id="modalCloseBtn">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const tg = window.Telegram?.WebApp;
     const state = {
@@ -87,6 +105,7 @@
       products: [],
       activeCategory: null,
       cartCount: 0,
+      selectedProduct: null,
     };
 
     if (tg) {
@@ -197,7 +216,7 @@
         const card = document.createElement('div');
         card.className = 'card product';
         card.innerHTML = `
-          <div class="img"><img src="${p.image_url}" alt=""></div>
+          <div class="img"><img src="${p.thumb_url || p.image_url}" alt=""></div>
           <div class="product-title">${p.title}</div>
           <div class="muted small">${p.description || 'Описание скоро будет'}</div>
           <div class="product-footer">
@@ -205,6 +224,8 @@
             <button class="pill ghost-sm">В корзину</button>
           </div>
         `;
+        card.querySelector('.img').onclick = () => openProduct(p);
+        card.querySelector('.product-title').onclick = () => openProduct(p);
         card.querySelector('button').onclick = () => addToCart(p.id);
         grid.appendChild(card);
       });
@@ -266,17 +287,39 @@
       if (!uid) return;
       const contact = els.contact.value.trim() || (state.user?.username ? '@' + state.user.username : '');
       const note = els.note.value.trim();
+      const tg_username = state.user?.username || '';
+      const tg_name = [state.user?.first_name, state.user?.last_name].filter(Boolean).join(' ');
       const res = await fetchJSON('/api/cart/checkout', {
         method: 'POST',
-        body: JSON.stringify({user_id: uid, contact, note}),
+        body: JSON.stringify({user_id: uid, contact, note, tg_username, tg_name}),
       });
       if (tg?.showAlert) tg.showAlert(res.message || 'Заказ принят');
       if (tg?.sendData) {
-        tg.sendData(JSON.stringify({action: 'checkout', user_id: uid, contact, note}));
+        tg.sendData(JSON.stringify({action: 'checkout', user_id: uid, contact, note, tg_username, tg_name}));
       }
       await clearCart();
       closeCartSheet();
     }
+
+    function openProduct(p) {
+      state.selectedProduct = p;
+      document.getElementById('modalImage').src = p.image_url;
+      document.getElementById('modalTitle').textContent = p.title;
+      document.getElementById('modalDesc').textContent = p.description || '';
+      document.getElementById('modalPrice').textContent = fmtPrice(p.price);
+      document.getElementById('productModal').classList.remove('hidden');
+    }
+
+    function closeProduct() {
+      document.getElementById('productModal').classList.add('hidden');
+      state.selectedProduct = null;
+    }
+
+    document.getElementById('modalAdd').onclick = () => {
+      if (state.selectedProduct) addToCart(state.selectedProduct.id);
+    };
+    document.getElementById('modalCloseBtn').onclick = closeProduct;
+    document.getElementById('closeProduct').onclick = closeProduct;
 
     // bindings
     els.search.oninput = renderProducts;

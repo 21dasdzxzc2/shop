@@ -60,6 +60,10 @@
           <input id="pImage" placeholder="/static/img/placeholder.svg">
         </div>
         <div class="input stacked" style="margin-top:8px;">
+          <label>URL превью (миниатюра)</label>
+          <input id="pThumb" placeholder="Опционально, если нужна облегчённая картинка">
+        </div>
+        <div class="input stacked" style="margin-top:8px;">
           <label>Описание</label>
           <textarea id="pDesc" rows="2" placeholder="Кратко о товаре"></textarea>
         </div>
@@ -103,7 +107,27 @@
       (data.items || []).forEach(cat => {
         const row = document.createElement('div');
         row.className = 'cart-row';
-        row.innerHTML = `<div>${cat.icon || ''} ${cat.name}</div><div class="muted small">ID: ${cat.id}</div>`;
+        row.innerHTML = `
+          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+            <div class="muted small">ID: ${cat.id}</div>
+            <input class="cat-name" value="${cat.name}" style="width:100%; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff;">
+            <input class="cat-icon" value="${cat.icon || ''}" placeholder="Иконка/эмодзи" style="width:100%; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff;">
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <button class="pill ghost-sm save-cat">Сохранить</button>
+            <button class="pill ghost-sm delete-cat" style="color:#ef4444;">Удалить</button>
+          </div>
+        `;
+        row.querySelector('.save-cat').onclick = () => {
+          const name = row.querySelector('.cat-name').value.trim();
+          const icon = row.querySelector('.cat-icon').value.trim();
+          updateCat(cat.id, name, icon);
+        };
+        row.querySelector('.delete-cat').onclick = () => {
+          if (confirm(`Удалить категорию ${cat.name}?`)) {
+            deleteCat(cat.id);
+          }
+        };
         box.appendChild(row);
       });
       state.categories = data.items || [];
@@ -124,6 +148,20 @@
       });
       document.getElementById('catName').value = '';
       document.getElementById('catIcon').value = '';
+      loadCats();
+    }
+
+    async function updateCat(id, name, icon) {
+      if (!name) return alert('Название не может быть пустым');
+      await api(`/api/categories/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({name, icon}),
+      });
+      loadCats();
+    }
+
+    async function deleteCat(id) {
+      await api(`/api/categories/${id}`, {method: 'DELETE'});
       loadCats();
     }
 
@@ -153,16 +191,18 @@
       const price = parseFloat(document.getElementById('pPrice').value);
       const category_id = parseInt(document.getElementById('pCategory').value, 10);
       const image_url = document.getElementById('pImage').value.trim() || '/static/img/placeholder.svg';
+      const thumb_url = document.getElementById('pThumb').value.trim();
       const description = document.getElementById('pDesc').value.trim();
       if (!title || !price || !category_id) return alert('Заполните название, цену и категорию');
       await api('/api/products', {
         method: 'POST',
-        body: JSON.stringify({title, price, category_id, image_url, description}),
+        body: JSON.stringify({title, price, category_id, image_url, thumb_url, description}),
       });
       document.getElementById('pTitle').value = '';
       document.getElementById('pPrice').value = '';
       document.getElementById('pCategory').value = '';
       document.getElementById('pImage').value = '';
+      document.getElementById('pThumb').value = '';
       document.getElementById('pDesc').value = '';
       loadProducts();
     }
