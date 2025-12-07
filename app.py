@@ -12,6 +12,8 @@ from telegram import (
     Update,
     WebAppInfo,
 )
+from telegram.error import NetworkError, TimedOut
+from telegram.request import HTTPXRequest
 
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -38,7 +40,14 @@ if not WEBAPP_URL:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-bot = Bot(token=BOT_TOKEN)
+request_client = HTTPXRequest(
+    connection_pool_size=int(os.environ.get("TG_POOL_SIZE", "20")),
+    connect_timeout=float(os.environ.get("TG_CONNECT_TIMEOUT", "10")),
+    read_timeout=float(os.environ.get("TG_READ_TIMEOUT", "20")),
+    write_timeout=float(os.environ.get("TG_WRITE_TIMEOUT", "20")),
+    pool_timeout=float(os.environ.get("TG_POOL_TIMEOUT", "10")),
+)
+bot = Bot(token=BOT_TOKEN, request=request_client)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 # ===== In-memory data store (demo) =====
@@ -108,13 +117,19 @@ def _next_id(items: List[Dict[str, Any]]) -> int:
 
 def send_message_sync(chat_id: int, text: str, reply_markup: Any | None = None) -> None:
     """Send Telegram message using async bot inside sync Flask handler."""
-    asyncio.run(
-        bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=reply_markup,
-        )
-    )
+    async def _send() -> None:
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=reply_markup,
+            )
+        except (TimedOut, NetworkError) as exc:
+            logger.warning("Send message timeout/network error: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Send message failed: %s", exc)
+
+    asyncio.run(_send())
 
 
 def _verify_secret_token() -> None:
