@@ -56,10 +56,10 @@ request_client = HTTPXRequest(
 bot = Bot(token=BOT_TOKEN, request=request_client)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 THUMBS_DIR = Path(app.static_folder) / "thumbs"
-THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR = Path(app.static_folder) / "uploads"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR = Path("data")
+THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== In-memory data store (demo) =====
