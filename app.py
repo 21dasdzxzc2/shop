@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from typing import Any, Dict
@@ -30,6 +31,17 @@ bot = Bot(token=BOT_TOKEN)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 
+def send_message_sync(chat_id: int, text: str, reply_markup: Any | None = None) -> None:
+    """Send Telegram message using async bot inside sync Flask handler."""
+    asyncio.run(
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=reply_markup,
+        )
+    )
+
+
 def _verify_secret_token() -> None:
     """Abort if Telegram secret token header is missing or incorrect."""
     if not WEBHOOK_SECRET:
@@ -49,7 +61,7 @@ def _handle_update(update: Update) -> None:
         if update.message.web_app_data:
             payload = update.message.web_app_data.data
             logger.info("Received web_app_data: %s", payload)
-            bot.send_message(chat_id=chat_id, text=f"Спасибо, получил: {payload}")
+            send_message_sync(chat_id=chat_id, text=f"Спасибо, получил: {payload}")
             return
 
         text = update.message.text or ""
@@ -64,16 +76,9 @@ def _handle_update(update: Update) -> None:
                     ]
                 ]
             )
-            bot.send_message(
-                chat_id=chat_id,
-                text="Нажми кнопку, чтобы открыть мини-приложение.",
-                reply_markup=keyboard,
-            )
+            send_message_sync(chat_id=chat_id, text="Нажми кнопку, чтобы открыть мини-приложение.", reply_markup=keyboard)
         else:
-            bot.send_message(
-                chat_id=chat_id,
-                text="Отправь /start, чтобы открыть мини-приложение.",
-            )
+            send_message_sync(chat_id=chat_id, text="Отправь /start, чтобы открыть мини-приложение.")
 
 
 @app.route("/")
