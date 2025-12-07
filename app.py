@@ -62,6 +62,48 @@ THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+def _clone(obj: Any) -> Any:
+    return json.loads(json.dumps(obj, ensure_ascii=False))
+
+
+def _save_json(name: str, data: Any) -> None:
+    path = DATA_DIR / name
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to save %s: %s", name, exc)
+
+
+def _load_json(name: str, default: Any) -> Any:
+    path = DATA_DIR / name
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to read %s: %s", name, exc)
+    data = _clone(default)
+    _save_json(name, data)
+    return data
+
+
+def _normalize_carts(data: Dict[str, Any]) -> Dict[int, Dict[int, int]]:
+    normalized: Dict[int, Dict[int, int]] = {}
+    for user_id_str, cart in data.items():
+        try:
+            uid = int(user_id_str)
+        except Exception:
+            continue
+        if not isinstance(cart, dict):
+            continue
+        normalized[uid] = {}
+        for pid_str, qty in cart.items():
+            try:
+                normalized[uid][int(pid_str)] = int(qty)
+            except Exception:
+                continue
+    return normalized
+
+
 # ===== In-memory data store (demo) =====
 _default_categories: List[Dict[str, Any]] = [
     {"id": 1, "name": "Футболки", "icon": "👕"},
@@ -115,48 +157,6 @@ carts_raw = _load_json("carts.json", {})
 carts: Dict[int, Dict[int, int]] = _normalize_carts(carts_raw)
 logs: List[Dict[str, Any]] = _load_json("logs.json", [])
 LOG_LIMIT = 200
-
-
-def _clone(obj: Any) -> Any:
-    return json.loads(json.dumps(obj, ensure_ascii=False))
-
-
-def _save_json(name: str, data: Any) -> None:
-    path = DATA_DIR / name
-    try:
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to save %s: %s", name, exc)
-
-
-def _load_json(name: str, default: Any) -> Any:
-    path = DATA_DIR / name
-    if path.exists():
-        try:
-            return json.loads(path.read_text())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to read %s: %s", name, exc)
-    data = _clone(default)
-    _save_json(name, data)
-    return data
-
-
-def _normalize_carts(data: Dict[str, Any]) -> Dict[int, Dict[int, int]]:
-    normalized: Dict[int, Dict[int, int]] = {}
-    for user_id_str, cart in data.items():
-        try:
-            uid = int(user_id_str)
-        except Exception:
-            continue
-        if not isinstance(cart, dict):
-            continue
-        normalized[uid] = {}
-        for pid_str, qty in cart.items():
-            try:
-                normalized[uid][int(pid_str)] = int(qty)
-            except Exception:
-                continue
-    return normalized
 
 
 def _log_event(kind: str, user_id: int | None = None, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
