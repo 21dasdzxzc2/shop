@@ -104,55 +104,9 @@ def _normalize_carts(data: Dict[str, Any]) -> Dict[int, Dict[int, int]]:
     return normalized
 
 
-# ===== In-memory data store (demo) =====
-_default_categories: List[Dict[str, Any]] = [
-    {"id": 1, "name": "Футболки", "icon": "👕"},
-    {"id": 2, "name": "Толстовки", "icon": "🧥"},
-    {"id": 3, "name": "Кроссовки", "icon": "👟"},
-    {"id": 4, "name": "Аксессуары", "icon": "🧢"},
-]
-
-_default_products: List[Dict[str, Any]] = [
-    {
-        "id": 1,
-        "title": "Oversize худи графит",
-        "price": 5990,
-        "category_id": 2,
-        "image_url": "/static/img/placeholder.svg",
-        "thumb_url": "/static/img/placeholder.svg",
-        "description": "Плотный футер, удлинённый крой.",
-    },
-    {
-        "id": 2,
-        "title": "Базовая белая футболка",
-        "price": 1990,
-        "category_id": 1,
-        "image_url": "/static/img/placeholder.svg",
-        "thumb_url": "/static/img/placeholder.svg",
-        "description": "100% хлопок, оверсайз.",
-    },
-    {
-        "id": 3,
-        "title": "Кроссовки street black",
-        "price": 8990,
-        "category_id": 3,
-        "image_url": "/static/img/placeholder.svg",
-        "thumb_url": "/static/img/placeholder.svg",
-        "description": "Лёгкие, нескользящая подошва.",
-    },
-    {
-        "id": 4,
-        "title": "Рюкзак urban",
-        "price": 4990,
-        "category_id": 4,
-        "image_url": "/static/img/placeholder.svg",
-        "thumb_url": "/static/img/placeholder.svg",
-        "description": "14\", защита от влаги, скрытый карман.",
-    },
-]
-
-categories: List[Dict[str, Any]] = _load_json("categories.json", _default_categories)
-products: List[Dict[str, Any]] = _load_json("products.json", _default_products)
+# ===== In-memory data store (loaded from data/*.json) =====
+categories: List[Dict[str, Any]] = _load_json("categories.json", [])
+products: List[Dict[str, Any]] = _load_json("products.json", [])
 carts_raw = _load_json("carts.json", {})
 carts: Dict[int, Dict[int, int]] = _normalize_carts(carts_raw)
 logs: List[Dict[str, Any]] = _load_json("logs.json", [])
