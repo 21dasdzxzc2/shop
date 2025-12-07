@@ -691,21 +691,6 @@ def api_admin_files_download() -> Any:
     return send_file(path, as_attachment=True)
 
 
-@app.route("/api/admin/files/upload", methods=["POST"])
-def api_admin_files_upload() -> Any:
-    _require_admin()
-    rel_dir = request.form.get("path", ".")
-    directory = _safe_path(rel_dir)
-    if not directory.exists():
-        directory.mkdir(parents=True, exist_ok=True)
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"ok": False, "error": "file_required"}), 400
-    dest = directory / file.filename
-    file.save(dest)
-    return jsonify({"ok": True, "path": str(dest.relative_to(FILES_ROOT))})
-
-
 @app.route("/api/admin/files/rename", methods=["POST"])
 def api_admin_files_rename() -> Any:
     _require_admin()

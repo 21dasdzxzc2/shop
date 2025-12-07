@@ -112,11 +112,6 @@
         <input id="fsPath" value="." placeholder=".">
       </div>
       <div class="file-list cart-list" id="fileList" style="max-height:320px;"></div>
-      <div class="input stacked" style="margin-top:10px;">
-        <label>Загрузить файл в текущий путь</label>
-        <input type="file" id="uploadFile">
-        <button class="pill accent" id="uploadBtn" style="margin-top:6px;">Загрузить</button>
-      </div>
     </section>
   </div>
 
@@ -317,13 +312,6 @@
       }
     }
 
-    function fsApi(path, opts = {}) {
-      const token = getToken();
-      const headers = opts.headers || {};
-      if (token) headers['X-Admin-Token'] = token;
-      return fetch(path, {...opts, headers});
-    }
-
     async function loadFiles(path = null) {
       const p = path ?? document.getElementById('fsPath').value.trim() || '.';
       document.getElementById('fsPath').value = p;
@@ -410,24 +398,7 @@
     }
 
     async function uploadFile() {
-      const fileInput = document.getElementById('uploadFile');
-      if (!fileInput.files.length) return alert('Выберите файл');
-      const path = document.getElementById('fsPath').value.trim() || '.';
-      const token = getToken();
-      const fd = new FormData();
-      fd.append('path', path);
-      fd.append('file', fileInput.files[0]);
-      const res = await fetch('/api/admin/files/upload', {
-        method: 'POST',
-        headers: token ? {'X-Admin-Token': token} : {},
-        body: fd,
-      });
-      if (!res.ok) {
-        alert('Ошибка загрузки');
-        return;
-      }
-      loadFiles(path);
-      fileInput.value = '';
+      return alert('Загрузка отключена');
     }
 
     document.getElementById('reloadCats').onclick = loadCats;
@@ -439,7 +410,6 @@
     document.getElementById('addBan').onclick = addBan;
     document.getElementById('exportData').onclick = exportData;
     document.getElementById('reloadFiles').onclick = () => loadFiles();
-    document.getElementById('uploadBtn').onclick = uploadFile;
 
     loadCats();
     loadProducts();
