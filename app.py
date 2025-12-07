@@ -11,7 +11,7 @@ import tempfile
 import zipfile
 
 import requests
-from flask import Flask, abort, jsonify, request, send_file, send_from_directory
+from flask import Flask, abort, jsonify, redirect, request, send_file, send_from_directory
 from PIL import Image
 from telegram import (
     Bot,
@@ -378,6 +378,11 @@ def webapp() -> Any:
 @app.route(ADMIN_FRONT_PATH)
 def admin_page() -> Any:
     return send_from_directory(app.static_folder, "admin.html")
+
+
+@app.route("/admin")
+def admin_compat() -> Any:
+    return redirect(ADMIN_FRONT_PATH, code=302)
 
 
 @app.route("/media/<path:filename>")
