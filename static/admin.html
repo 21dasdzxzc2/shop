@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · Urban Store</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>
+          <div class="brand-title">Admin · Urban Store</div>
+          <div class="brand-sub">Категории, товары, логи</div>
+        </div>
+      </div>
+      <div class="input" style="max-width:220px;">
+        <input id="token" placeholder="X-Admin-Token">
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Категории</div>
+        <button class="pill ghost" id="reloadCats">Обновить</button>
+      </div>
+      <div class="input stacked" style="margin-top:10px;">
+        <label>Добавить категорию</label>
+        <input id="catName" placeholder="Название">
+        <input id="catIcon" placeholder="Эмодзи (опционально)">
+        <button class="pill accent" id="createCat" style="margin-top:8px;">Создать</button>
+      </div>
+      <div id="catList" style="margin-top:12px;"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Товары</div>
+        <button class="pill ghost" id="reloadProducts">Обновить</button>
+      </div>
+      <div class="grid" id="productList" style="margin-top:10px;"></div>
+      <div class="panel" style="margin-top:12px;">
+        <div class="panel-title">Добавить товар</div>
+        <div class="input stacked" style="margin-top:8px;">
+          <label>Название</label>
+          <input id="pTitle" placeholder="Например: Oversize худи">
+        </div>
+        <div class="input stacked" style="margin-top:8px;">
+          <label>Цена</label>
+          <input id="pPrice" type="number" placeholder="5990">
+        </div>
+        <div class="input stacked" style="margin-top:8px;">
+          <label>Категория (ID)</label>
+          <input id="pCategory" type="number" placeholder="1">
+        </div>
+        <div class="input stacked" style="margin-top:8px;">
+          <label>URL картинки</label>
+          <input id="pImage" placeholder="/static/img/placeholder.svg">
+        </div>
+        <div class="input stacked" style="margin-top:8px;">
+          <label>Описание</label>
+          <textarea id="pDesc" rows="2" placeholder="Кратко о товаре"></textarea>
+        </div>
+        <button class="pill accent" id="createProduct" style="margin-top:10px;">Создать товар</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Логи (последние)</div>
+        <button class="pill ghost" id="reloadLogs">Обновить</button>
+      </div>
+      <div id="logList" class="cart-list" style="margin-top:10px; max-height: 320px;"></div>
+    </section>
+  </div>
+
+  <script>
+    const state = { token: '', categories: [] };
+
+    function getToken() {
+      const val = document.getElementById('token').value.trim();
+      state.token = val;
+      return val;
+    }
+
+    async function api(path, options = {}) {
+      const token = getToken();
+      const headers = {'Content-Type': 'application/json'};
+      if (token) headers['X-Admin-Token'] = token;
+      const res = await fetch(path, {...options, headers});
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status}: ${txt}`);
+      }
+      return res.json();
+    }
+
+    function renderCats(data) {
+      const box = document.getElementById('catList');
+      box.innerHTML = '';
+      (data.items || []).forEach(cat => {
+        const row = document.createElement('div');
+        row.className = 'cart-row';
+        row.innerHTML = `<div>${cat.icon || ''} ${cat.name}</div><div class="muted small">ID: ${cat.id}</div>`;
+        box.appendChild(row);
+      });
+      state.categories = data.items || [];
+    }
+
+    async function loadCats() {
+      const data = await api('/api/categories');
+      renderCats(data);
+    }
+
+    async function createCat() {
+      const name = document.getElementById('catName').value.trim();
+      const icon = document.getElementById('catIcon').value.trim();
+      if (!name) return alert('Укажите название');
+      await api('/api/categories', {
+        method: 'POST',
+        body: JSON.stringify({name, icon}),
+      });
+      document.getElementById('catName').value = '';
+      document.getElementById('catIcon').value = '';
+      loadCats();
+    }
+
+    function renderProducts(data) {
+      const grid = document.getElementById('productList');
+      grid.innerHTML = '';
+      (data.items || []).forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'card product';
+        card.innerHTML = `
+          <div class="img"><img src="${p.image_url}" alt=""></div>
+          <div class="product-title">${p.title}</div>
+          <div class="muted small">ID: ${p.id} · Категория: ${p.category_id}</div>
+          <div class="product-footer"><div class="price">${p.price} ₽</div></div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    async function loadProducts() {
+      const data = await api('/api/products');
+      renderProducts(data);
+    }
+
+    async function createProduct() {
+      const title = document.getElementById('pTitle').value.trim();
+      const price = parseFloat(document.getElementById('pPrice').value);
+      const category_id = parseInt(document.getElementById('pCategory').value, 10);
+      const image_url = document.getElementById('pImage').value.trim() || '/static/img/placeholder.svg';
+      const description = document.getElementById('pDesc').value.trim();
+      if (!title || !price || !category_id) return alert('Заполните название, цену и категорию');
+      await api('/api/products', {
+        method: 'POST',
+        body: JSON.stringify({title, price, category_id, image_url, description}),
+      });
+      document.getElementById('pTitle').value = '';
+      document.getElementById('pPrice').value = '';
+      document.getElementById('pCategory').value = '';
+      document.getElementById('pImage').value = '';
+      document.getElementById('pDesc').value = '';
+      loadProducts();
+    }
+
+    async function loadLogs() {
+      const data = await api('/api/admin/logs');
+      const box = document.getElementById('logList');
+      box.innerHTML = '';
+      (data.items || []).slice().reverse().forEach(log => {
+        const row = document.createElement('div');
+        row.className = 'cart-row';
+        row.innerHTML = `
+          <div>
+            <div class="cart-title">${log.kind}</div>
+            <div class="muted small">${log.ts}</div>
+          </div>
+          <div class="muted small">user: ${log.user_id ?? '-'}</div>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    document.getElementById('reloadCats').onclick = loadCats;
+    document.getElementById('createCat').onclick = createCat;
+    document.getElementById('reloadProducts').onclick = loadProducts;
+    document.getElementById('createProduct').onclick = createProduct;
+    document.getElementById('reloadLogs').onclick = loadLogs;
+
+    loadCats();
+    loadProducts();
+    loadLogs();
+  </script>
+</body>
+</html>

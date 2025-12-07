@@ -3,184 +3,293 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Мини-приложение</title>
-  <style>
-    :root {
-      --bg: #0f172a;
-      --card: #111827;
-      --text: #e5e7eb;
-      --muted: #94a3b8;
-      --accent: #22d3ee;
-      --accent-2: #8b5cf6;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Inter", system-ui, -apple-system, sans-serif;
-      background: radial-gradient(circle at 20% 20%, #1f2937 0, #0f172a 40%),
-                  radial-gradient(circle at 80% 0%, #0ea5e9 0, #0f172a 35%),
-                  #0f172a;
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      padding: 24px;
-    }
-    .card {
-      width: min(480px, 100%);
-      background: var(--card);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 25px 60px rgba(0,0,0,0.35);
-      backdrop-filter: blur(6px);
-    }
-    h1 {
-      margin: 0 0 8px;
-      font-size: 26px;
-      letter-spacing: -0.5px;
-    }
-    p { margin: 0 0 16px; color: var(--muted); line-height: 1.5; }
-    .user {
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: rgba(255,255,255,0.04);
-      color: var(--text);
-      margin-bottom: 16px;
-      font-size: 14px;
-    }
-    .buttons {
-      display: grid;
-      gap: 12px;
-      margin-top: 12px;
-    }
-    button {
-      border: 0;
-      border-radius: 12px;
-      padding: 14px 16px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      color: #0f172a;
-      background: var(--accent);
-      transition: transform 120ms ease, box-shadow 120ms ease;
-      box-shadow: 0 8px 20px rgba(34, 211, 238, 0.35);
-    }
-    button.secondary {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,0.08);
-      box-shadow: none;
-    }
-    button.ghost {
-      background: rgba(255,255,255,0.06);
-      color: var(--text);
-      box-shadow: none;
-    }
-    button:active { transform: translateY(1px); }
-    pre {
-      background: rgba(255,255,255,0.04);
-      border-radius: 12px;
-      padding: 12px;
-      color: var(--muted);
-      font-size: 13px;
-      overflow: auto;
-      margin-top: 12px;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-  </style>
+  <title>Urban Store · WebApp</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div class="card">
-    <h1>Привет 👋</h1>
-    <p>Мини-приложение Telegram: короткий привет, пара кнопок и отдача данных назад в бот.</p>
-    <div class="user" id="user-info">Загружаю данные пользователя...</div>
-    <div class="buttons">
-      <button id="hello-btn">Поприветствовать</button>
-      <button class="secondary" id="send-btn">Отправить данные в бот</button>
-      <button class="ghost" id="close-btn">Закрыть</button>
-    </div>
-    <pre id="log"></pre>
+  <div class="bg-ornament"></div>
+  <div class="shell">
+    <header class="top">
+      <div class="brand">
+        <div class="dot"></div>
+        <div>
+          <div class="brand-title">Urban Store</div>
+          <div class="brand-sub">Telegram WebApp</div>
+        </div>
+      </div>
+      <button class="pill ghost" id="userBadge">...</button>
+    </header>
+
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Новая коллекция</p>
+        <h1>Собери корзину и оформи заказ в пару кликов</h1>
+        <p class="muted">Категории, товары, корзина и быстрый чек-аут — всё внутри WebApp.</p>
+        <div class="hero-actions">
+          <button class="pill accent" id="openCart">Корзина · <span id="cartCounter">0</span></button>
+          <button class="pill ghost" id="clearCart">Очистить</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Категории</div>
+        <div class="input">
+          <input id="search" type="text" placeholder="Поиск по товарам...">
+        </div>
+      </div>
+      <div class="category-row" id="categoryRow"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Товары</div>
+        <div class="hint" id="productCount"></div>
+      </div>
+      <div class="grid" id="productGrid"></div>
+    </section>
   </div>
 
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <div class="sheet hidden" id="cartSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <div class="sheet-title">Корзина</div>
+        <div class="muted small" id="cartSubtitle">Товаров: 0</div>
+      </div>
+      <button class="icon-btn" id="closeSheet">✕</button>
+    </div>
+    <div class="cart-list" id="cartList"></div>
+    <div class="checkout">
+      <div>
+        <div class="muted small">Итого</div>
+        <div class="total" id="cartTotal">0 ₽</div>
+      </div>
+      <button class="pill accent" id="checkoutBtn">Оформить</button>
+    </div>
+    <div class="input stacked">
+      <label for="contact">Контакт для связи</label>
+      <input id="contact" placeholder="Телеграм или телефон">
+    </div>
+    <div class="input stacked">
+      <label for="note">Комментарий</label>
+      <textarea id="note" rows="2" placeholder="Пожелания к заказу"></textarea>
+    </div>
+  </div>
+
   <script>
     const tg = window.Telegram?.WebApp;
-    const userBox = document.getElementById('user-info');
-    const logBox = document.getElementById('log');
-
-    function log(message) {
-      logBox.textContent = message;
-    }
-
-    function setUserInfo() {
-      const user = tg?.initDataUnsafe?.user;
-      if (user) {
-        const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
-        const username = user.username ? ` @${user.username}` : '';
-        userBox.textContent = `Вы: ${name || 'Неизвестный пользователь'}${username}`;
-      } else {
-        userBox.textContent = 'Открыто вне Telegram. Кнопка "Отправить данные в бот" будет недоступна.';
-        document.getElementById('send-btn').disabled = true;
-      }
-    }
-
-    async function sendPing() {
-      try {
-        const user = tg?.initDataUnsafe?.user;
-        const name = user?.first_name || 'друг';
-        const res = await fetch('/api/ping', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        const data = await res.json();
-        log(data.greeting || JSON.stringify(data));
-        tg?.HapticFeedback?.impactOccurred('light');
-      } catch (err) {
-        log(`Ошибка: ${err}`);
-      }
-    }
-
-    function sendToBot() {
-      if (!tg) {
-        log('Нет Telegram WebApp контекста.');
-        return;
-      }
-      const user = tg.initDataUnsafe?.user;
-      const payload = {
-        source: 'webapp',
-        message: 'Привет из мини-приложения!',
-        user: user ? {
-          id: user.id,
-          username: user.username,
-          first_name: user.first_name,
-          last_name: user.last_name,
-        } : null,
-        timestamp: Date.now(),
-      };
-      tg.sendData(JSON.stringify(payload));
-      log('Отправлено в бот. Смотри чат.');
-      tg.HapticFeedback?.impactOccurred('soft');
-    }
-
-    function closeApp() {
-      log('Закрываю приложение...');
-      tg?.close();
-    }
-
-    document.getElementById('hello-btn').addEventListener('click', sendPing);
-    document.getElementById('send-btn').addEventListener('click', sendToBot);
-    document.getElementById('close-btn').addEventListener('click', closeApp);
+    const state = {
+      user: tg?.initDataUnsafe?.user || null,
+      categories: [],
+      products: [],
+      activeCategory: null,
+      cartCount: 0,
+    };
 
     if (tg) {
       tg.expand();
       tg.ready();
     }
-    setUserInfo();
-    log('Готово к работе.');
+
+    const els = {
+      userBadge: document.getElementById('userBadge'),
+      categoryRow: document.getElementById('categoryRow'),
+      productGrid: document.getElementById('productGrid'),
+      productCount: document.getElementById('productCount'),
+      search: document.getElementById('search'),
+      cartCounter: document.getElementById('cartCounter'),
+      cartSheet: document.getElementById('cartSheet'),
+      cartList: document.getElementById('cartList'),
+      cartSubtitle: document.getElementById('cartSubtitle'),
+      cartTotal: document.getElementById('cartTotal'),
+      contact: document.getElementById('contact'),
+      note: document.getElementById('note'),
+    };
+
+    function fmtPrice(num) {
+      return new Intl.NumberFormat('ru-RU').format(num) + ' ₽';
+    }
+
+    function getUserId() {
+      if (state.user?.id) return state.user.id;
+      const params = new URLSearchParams(window.location.search);
+      return parseInt(params.get('user_id') || '0', 10) || 0;
+    }
+
+    function setUserBadge() {
+      if (!state.user) {
+        els.userBadge.textContent = 'Гость';
+        return;
+      }
+      const name = [state.user.first_name, state.user.last_name].filter(Boolean).join(' ');
+      els.userBadge.textContent = name || state.user.username || 'Пользователь';
+    }
+
+    async function fetchJSON(url, options = {}) {
+      const res = await fetch(url, {
+        headers: {'Content-Type': 'application/json'},
+        ...options,
+      });
+      return res.json();
+    }
+
+    async function loadCategories() {
+      const data = await fetchJSON('/api/categories');
+      state.categories = data.items || [];
+      renderCategories();
+    }
+
+    async function loadProducts(categoryId = null) {
+      let url = '/api/products';
+      if (categoryId) url += `?category_id=${categoryId}`;
+      const data = await fetchJSON(url);
+      state.products = data.items || [];
+      renderProducts();
+    }
+
+    async function refreshCart() {
+      const uid = getUserId();
+      if (!uid) return;
+      const data = await fetchJSON(`/api/cart/${uid}`);
+      state.cartCount = data.items?.reduce((acc, item) => acc + item.qty, 0) || 0;
+      els.cartCounter.textContent = state.cartCount;
+      els.cartSubtitle.textContent = `Товаров: ${state.cartCount}`;
+      renderCart(data);
+    }
+
+    function renderCategories() {
+      const row = els.categoryRow;
+      row.innerHTML = '';
+      const allBtn = document.createElement('button');
+      allBtn.className = `chip ${state.activeCategory === null ? 'active' : ''}`;
+      allBtn.textContent = 'Все';
+      allBtn.onclick = () => {
+        state.activeCategory = null;
+        loadProducts();
+        renderCategories();
+      };
+      row.appendChild(allBtn);
+
+      state.categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = `chip ${state.activeCategory === cat.id ? 'active' : ''}`;
+        btn.textContent = `${cat.icon || ''} ${cat.name}`;
+        btn.onclick = () => {
+          state.activeCategory = cat.id;
+          loadProducts(cat.id);
+          renderCategories();
+        };
+        row.appendChild(btn);
+      });
+    }
+
+    function renderProducts() {
+      const grid = els.productGrid;
+      grid.innerHTML = '';
+      const q = els.search.value.trim().toLowerCase();
+      const filtered = state.products.filter(p => p.title.toLowerCase().includes(q));
+      els.productCount.textContent = `${filtered.length} позиций`;
+
+      filtered.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'card product';
+        card.innerHTML = `
+          <div class="img"><img src="${p.image_url}" alt=""></div>
+          <div class="product-title">${p.title}</div>
+          <div class="muted small">${p.description || 'Описание скоро будет'}</div>
+          <div class="product-footer">
+            <div class="price">${fmtPrice(p.price)}</div>
+            <button class="pill ghost-sm">В корзину</button>
+          </div>
+        `;
+        card.querySelector('button').onclick = () => addToCart(p.id);
+        grid.appendChild(card);
+      });
+    }
+
+    async function addToCart(productId) {
+      const uid = getUserId();
+      if (!uid) {
+        alert('Откройте через Telegram, чтобы добавить в корзину.');
+        return;
+      }
+      await fetchJSON('/api/cart/add', {
+        method: 'POST',
+        body: JSON.stringify({user_id: uid, product_id: productId, qty: 1}),
+      });
+      if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+      await refreshCart();
+    }
+
+    function renderCart(data) {
+      const list = els.cartList;
+      list.innerHTML = '';
+      (data.items || []).forEach(row => {
+        const item = document.createElement('div');
+        item.className = 'cart-row';
+        item.innerHTML = `
+          <div>
+            <div class="cart-title">${row.product.title}</div>
+            <div class="muted small">x${row.qty} · ${fmtPrice(row.product.price)} / шт</div>
+          </div>
+          <div class="price">${fmtPrice(row.subtotal)}</div>
+        `;
+        list.appendChild(item);
+      });
+      els.cartTotal.textContent = fmtPrice(data.total || 0);
+    }
+
+    function openCartSheet() {
+      els.cartSheet.classList.remove('hidden');
+      if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('soft');
+    }
+
+    function closeCartSheet() {
+      els.cartSheet.classList.add('hidden');
+    }
+
+    async function clearCart() {
+      const uid = getUserId();
+      if (!uid) return;
+      await fetchJSON('/api/cart/clear', {
+        method: 'POST',
+        body: JSON.stringify({user_id: uid}),
+      });
+      await refreshCart();
+    }
+
+    async function checkout() {
+      const uid = getUserId();
+      if (!uid) return;
+      const contact = els.contact.value.trim() || (state.user?.username ? '@' + state.user.username : '');
+      const note = els.note.value.trim();
+      const res = await fetchJSON('/api/cart/checkout', {
+        method: 'POST',
+        body: JSON.stringify({user_id: uid, contact, note}),
+      });
+      if (tg?.showAlert) tg.showAlert(res.message || 'Заказ принят');
+      if (tg?.sendData) {
+        tg.sendData(JSON.stringify({action: 'checkout', user_id: uid, contact, note}));
+      }
+      await clearCart();
+      closeCartSheet();
+    }
+
+    // bindings
+    els.search.oninput = renderProducts;
+    document.getElementById('openCart').onclick = () => { refreshCart(); openCartSheet(); };
+    document.getElementById('closeSheet').onclick = closeCartSheet;
+    document.getElementById('checkoutBtn').onclick = checkout;
+    document.getElementById('clearCart').onclick = clearCart;
+
+    // init
+    setUserBadge();
+    loadCategories();
+    loadProducts();
+    refreshCart();
   </script>
 </body>
 </html>

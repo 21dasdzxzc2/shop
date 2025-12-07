@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="gb" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="#0b0f1e"/>
+  <rect x="24" y="24" width="592" height="312" rx="28" fill="url(#gb)" opacity="0.9"/>
+  <rect x="220" y="150" width="200" height="130" rx="24" fill="#0b0f1e" opacity="0.92"/>
+  <path d="M260 170c0-30 20-50 60-50s60 20 60 50" stroke="#f8fafc" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <circle cx="260" cy="200" r="8" fill="#f59e0b"/>
+  <circle cx="420" cy="200" r="8" fill="#f59e0b"/>
+  <text x="50%" y="320" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="26">Urban bag</text>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="gt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="#0c1125"/>
+  <rect x="24" y="24" width="592" height="312" rx="28" fill="url(#gt)" opacity="0.9"/>
+  <path d="M220 240c-4-40 10-90 40-110l40 20 40-20c30 20 44 70 40 110l-50 20-20-30-20 30z" fill="#f8fafc" opacity="0.96"/>
+  <path d="M260 150c30 24 70 24 100 0" stroke="#0c1125" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <text x="50%" y="320" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="26">Basic tee</text>
+</svg>
