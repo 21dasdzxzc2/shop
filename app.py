@@ -33,6 +33,8 @@ ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN")
 ADMIN_FRONT_PATH = os.environ.get(
     "ADMIN_FRONT_PATH", "/admin312fhdse38q8dashbdczjkx32131dcsDAShjbbn213"
 )
+if not ADMIN_FRONT_PATH.startswith("/"):
+    ADMIN_FRONT_PATH = f"/{ADMIN_FRONT_PATH}"
 FILES_ROOT = Path(os.environ.get("FILES_ROOT", ".")).resolve()
 
 ADMIN_CHAT_ID = None
