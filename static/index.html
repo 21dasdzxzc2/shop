@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Мини-приложение</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #22d3ee;
+      --accent-2: #8b5cf6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, #1f2937 0, #0f172a 40%),
+                  radial-gradient(circle at 80% 0%, #0ea5e9 0, #0f172a 35%),
+                  #0f172a;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      width: min(480px, 100%);
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.35);
+      backdrop-filter: blur(6px);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: -0.5px;
+    }
+    p { margin: 0 0 16px; color: var(--muted); line-height: 1.5; }
+    .user {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+    .buttons {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #0f172a;
+      background: var(--accent);
+      transition: transform 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 8px 20px rgba(34, 211, 238, 0.35);
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: none;
+    }
+    button.ghost {
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      box-shadow: none;
+    }
+    button:active { transform: translateY(1px); }
+    pre {
+      background: rgba(255,255,255,0.04);
+      border-radius: 12px;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow: auto;
+      margin-top: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Привет 👋</h1>
+    <p>Мини-приложение Telegram: короткий привет, пара кнопок и отдача данных назад в бот.</p>
+    <div class="user" id="user-info">Загружаю данные пользователя...</div>
+    <div class="buttons">
+      <button id="hello-btn">Поприветствовать</button>
+      <button class="secondary" id="send-btn">Отправить данные в бот</button>
+      <button class="ghost" id="close-btn">Закрыть</button>
+    </div>
+    <pre id="log"></pre>
+  </div>
+
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    const tg = window.Telegram?.WebApp;
+    const userBox = document.getElementById('user-info');
+    const logBox = document.getElementById('log');
+
+    function log(message) {
+      logBox.textContent = message;
+    }
+
+    function setUserInfo() {
+      const user = tg?.initDataUnsafe?.user;
+      if (user) {
+        const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+        const username = user.username ? ` @${user.username}` : '';
+        userBox.textContent = `Вы: ${name || 'Неизвестный пользователь'}${username}`;
+      } else {
+        userBox.textContent = 'Открыто вне Telegram. Кнопка "Отправить данные в бот" будет недоступна.';
+        document.getElementById('send-btn').disabled = true;
+      }
+    }
+
+    async function sendPing() {
+      try {
+        const user = tg?.initDataUnsafe?.user;
+        const name = user?.first_name || 'друг';
+        const res = await fetch('/api/ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        log(data.greeting || JSON.stringify(data));
+        tg?.HapticFeedback?.impactOccurred('light');
+      } catch (err) {
+        log(`Ошибка: ${err}`);
+      }
+    }
+
+    function sendToBot() {
+      if (!tg) {
+        log('Нет Telegram WebApp контекста.');
+        return;
+      }
+      const user = tg.initDataUnsafe?.user;
+      const payload = {
+        source: 'webapp',
+        message: 'Привет из мини-приложения!',
+        user: user ? {
+          id: user.id,
+          username: user.username,
+          first_name: user.first_name,
+          last_name: user.last_name,
+        } : null,
+        timestamp: Date.now(),
+      };
+      tg.sendData(JSON.stringify(payload));
+      log('Отправлено в бот. Смотри чат.');
+      tg.HapticFeedback?.impactOccurred('soft');
+    }
+
+    function closeApp() {
+      log('Закрываю приложение...');
+      tg?.close();
+    }
+
+    document.getElementById('hello-btn').addEventListener('click', sendPing);
+    document.getElementById('send-btn').addEventListener('click', sendToBot);
+    document.getElementById('close-btn').addEventListener('click', closeApp);
+
+    if (tg) {
+      tg.expand();
+      tg.ready();
+    }
+    setUserInfo();
+    log('Готово к работе.');
+  </script>
+</body>
+</html>
