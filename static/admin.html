@@ -78,6 +78,20 @@
       </div>
       <div id="logList" class="cart-list" style="margin-top:10px; max-height: 320px;"></div>
     </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Баны</div>
+        <button class="pill ghost" id="reloadBans">Обновить</button>
+      </div>
+      <div class="input stacked" style="margin-top:10px;">
+        <label>Забанить user_id</label>
+        <input id="banUserId" type="number" placeholder="123456">
+        <input id="banReason" placeholder="Причина (опционально)">
+        <button class="pill accent" id="addBan" style="margin-top:8px;">Забанить</button>
+      </div>
+      <div id="banList" class="cart-list" style="margin-top:12px; max-height: 240px;"></div>
+    </section>
   </div>
 
   <script>
@@ -225,15 +239,55 @@
       });
     }
 
+    async function loadBans() {
+      const data = await api('/api/admin/bans');
+      const box = document.getElementById('banList');
+      box.innerHTML = '';
+      (data.items || []).forEach(ban => {
+        const row = document.createElement('div');
+        row.className = 'cart-row';
+        row.innerHTML = `
+          <div>
+            <div class="cart-title">user_id: ${ban.user_id}</div>
+            <div class="muted small">${ban.reason || ''}</div>
+          </div>
+          <button class="pill ghost-sm unban">Разбанить</button>
+        `;
+        row.querySelector('.unban').onclick = () => unban(ban.user_id);
+        box.appendChild(row);
+      });
+    }
+
+    async function addBan() {
+      const user_id = parseInt(document.getElementById('banUserId').value, 10);
+      const reason = document.getElementById('banReason').value.trim();
+      if (!user_id) return alert('Укажите user_id');
+      await api('/api/admin/bans', {
+        method: 'POST',
+        body: JSON.stringify({user_id, reason}),
+      });
+      document.getElementById('banUserId').value = '';
+      document.getElementById('banReason').value = '';
+      loadBans();
+    }
+
+    async function unban(user_id) {
+      await api(`/api/admin/bans/${user_id}`, {method: 'DELETE'});
+      loadBans();
+    }
+
     document.getElementById('reloadCats').onclick = loadCats;
     document.getElementById('createCat').onclick = createCat;
     document.getElementById('reloadProducts').onclick = loadProducts;
     document.getElementById('createProduct').onclick = createProduct;
     document.getElementById('reloadLogs').onclick = loadLogs;
+    document.getElementById('reloadBans').onclick = loadBans;
+    document.getElementById('addBan').onclick = addBan;
 
     loadCats();
     loadProducts();
     loadLogs();
+    loadBans();
   </script>
 </body>
 </html>

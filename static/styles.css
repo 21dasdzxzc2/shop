@@ -301,6 +301,26 @@ body {
 .modal-price { font-weight: 700; font-size: 20px; }
 .modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+.banned {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(5, 9, 21, 0.92);
+  z-index: 30;
+}
+.banned.hidden { display: none; }
+.banned-card {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  padding: 24px;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.banned-title { font-size: 22px; font-weight: 800; color: #f87171; margin-bottom: 6px; }
+
 @media (max-width: 520px) {
   .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }

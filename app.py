@@ -104,6 +104,12 @@ def _normalize_carts(data: Dict[str, Any]) -> Dict[int, Dict[int, int]]:
     return normalized
 
 
+def _is_banned(user_id: int | None) -> bool:
+    if user_id is None:
+        return False
+    return any(ban.get("user_id") == int(user_id) for ban in bans)
+
+
 # ===== In-memory data store (loaded from data/*.json) =====
 categories: List[Dict[str, Any]] = _load_json("categories.json", [])
 products: List[Dict[str, Any]] = _load_json("products.json", [])
@@ -111,6 +117,7 @@ carts_raw = _load_json("carts.json", {})
 carts: Dict[int, Dict[int, int]] = _normalize_carts(carts_raw)
 logs: List[Dict[str, Any]] = _load_json("logs.json", [])
 LOG_LIMIT = 200
+bans: List[Dict[str, Any]] = _load_json("bans.json", [])
 
 
 def _log_event(kind: str, user_id: int | None = None, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -430,6 +437,9 @@ def api_cart_add() -> Any:
     if not user_id or not product_id:
         return jsonify({"ok": False, "error": "user_id and product_id required"}), 400
 
+    if _is_banned(int(user_id)):
+        return jsonify({"ok": False, "error": "banned"}), 403
+
     product = _get_product(int(product_id))
     if not product:
         return jsonify({"ok": False, "error": "product not found"}), 404
@@ -462,6 +472,8 @@ def api_cart_clear() -> Any:
     user_id = body.get("user_id")
     if not user_id:
         return jsonify({"ok": False, "error": "user_id required"}), 400
+    if _is_banned(int(user_id)):
+        return jsonify({"ok": False, "error": "banned"}), 403
     carts[int(user_id)] = {}
     _log_event("cart_clear", user_id=int(user_id))
     _save_json("carts.json", carts)
@@ -478,6 +490,8 @@ def api_cart_checkout() -> Any:
     tg_name = (body.get("tg_name") or "").strip()
     if not user_id:
         return jsonify({"ok": False, "error": "user_id required"}), 400
+    if _is_banned(int(user_id)):
+        return jsonify({"ok": False, "error": "banned"}), 403
 
     cart = carts.get(int(user_id), {})
     items: List[Dict[str, Any]] = []
@@ -526,12 +540,61 @@ def api_admin_logs() -> Any:
     return jsonify({"items": logs[-limit:]})
 
 
+@app.route("/api/admin/bans", methods=["GET", "POST"])
+def api_admin_bans() -> Any:
+    _require_admin()
+    if request.method == "GET":
+        return jsonify({"items": bans})
+    body = request.get_json(force=True, silent=True) or {}
+    user_id = body.get("user_id")
+    reason = (body.get("reason") or "").strip()
+    try:
+        user_id_int = int(user_id)
+    except Exception:
+        return jsonify({"ok": False, "error": "user_id required"}), 400
+    if any(b["user_id"] == user_id_int for b in bans):
+        return jsonify({"ok": False, "error": "already banned"}), 400
+    ban = {"user_id": user_id_int, "reason": reason}
+    bans.append(ban)
+    _log_event("user_banned", user_id=user_id_int, payload={"reason": reason})
+    _save_json("bans.json", bans)
+    return jsonify(ban), 201
+
+
+@app.route("/api/admin/bans/<int:user_id>", methods=["DELETE"])
+def api_admin_bans_delete(user_id: int) -> Any:
+    _require_admin()
+    initial = len(bans)
+    bans[:] = [b for b in bans if b["user_id"] != user_id]
+    if len(bans) == initial:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    _log_event("user_unbanned", user_id=user_id)
+    _save_json("bans.json", bans)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/ping", methods=["POST"])
 def api_ping() -> Any:
     payload = request.get_json(silent=True) or {}
     name = str(payload.get("name") or "друг").strip()
     greeting = f"Привет, {name}!"
     return jsonify({"ok": True, "greeting": greeting})
+
+
+@app.route("/api/status", methods=["POST"])
+def api_status() -> Any:
+    body = request.get_json(force=True, silent=True) or {}
+    user_id = body.get("user_id")
+    try:
+        user_id_int = int(user_id)
+    except Exception:
+        return jsonify({"ok": True, "banned": False})
+    banned = _is_banned(user_id_int)
+    reason = ""
+    if banned:
+        match = next((b for b in bans if b.get("user_id") == user_id_int), None)
+        reason = (match or {}).get("reason") or ""
+    return jsonify({"ok": True, "banned": banned, "reason": reason})
 
 
 @app.route("/telegram/webhook", methods=["POST"])

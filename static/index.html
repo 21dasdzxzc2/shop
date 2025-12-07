@@ -10,6 +10,12 @@
 <body>
   <div class="bg-ornament"></div>
   <div class="shell">
+    <div class="banned hidden" id="bannedScreen">
+      <div class="banned-card">
+        <div class="banned-title">ТЫ ЗАБАНЕН</div>
+        <div class="muted">Доступ ограничен администратором.</div>
+      </div>
+    </div>
     <header class="top">
       <div class="brand">
         <div class="dot"></div>
@@ -106,6 +112,7 @@
       activeCategory: null,
       cartCount: 0,
       selectedProduct: null,
+      banned: false,
     };
 
     if (tg) {
@@ -153,6 +160,22 @@
         ...options,
       });
       return res.json();
+    }
+
+    async function checkBanned() {
+      const uid = getUserId();
+      if (!uid) return false;
+      const res = await fetchJSON('/api/status', {
+        method: 'POST',
+        body: JSON.stringify({user_id: uid}),
+      });
+      state.banned = !!res.banned;
+      if (state.banned) {
+        document.getElementById('bannedScreen').classList.remove('hidden');
+      } else {
+        document.getElementById('bannedScreen').classList.add('hidden');
+      }
+      return state.banned;
     }
 
     async function loadCategories() {
@@ -237,6 +260,10 @@
         alert('Откройте через Telegram, чтобы добавить в корзину.');
         return;
       }
+      if (state.banned) {
+        alert('Доступ запрещён.');
+        return;
+      }
       await fetchJSON('/api/cart/add', {
         method: 'POST',
         body: JSON.stringify({user_id: uid, product_id: productId, qty: 1}),
@@ -285,6 +312,10 @@
     async function checkout() {
       const uid = getUserId();
       if (!uid) return;
+      if (state.banned) {
+        alert('Доступ запрещён.');
+        return;
+      }
       const contact = els.contact.value.trim() || (state.user?.username ? '@' + state.user.username : '');
       const note = els.note.value.trim();
       const tg_username = state.user?.username || '';
@@ -330,9 +361,12 @@
 
     // init
     setUserBadge();
-    loadCategories();
-    loadProducts();
-    refreshCart();
+    checkBanned().then((isBanned) => {
+      if (isBanned) return;
+      loadCategories();
+      loadProducts();
+      refreshCart();
+    });
   </script>
 </body>
 </html>
