@@ -61,12 +61,12 @@ request_client = HTTPXRequest(
 )
 bot = Bot(token=BOT_TOKEN, request=request_client)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-THUMBS_DIR = Path(app.static_folder) / "thumbs"
-UPLOADS_DIR = Path(app.static_folder) / "uploads"
 DATA_DIR = Path("data")
-THUMBS_DIR.mkdir(parents=True, exist_ok=True)
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+IMAGES_DIR = DATA_DIR / "images"
+THUMBS_DIR = DATA_DIR / "thumbs"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 
 def _clone(obj: Any) -> Any:
     return json.loads(json.dumps(obj, ensure_ascii=False))
@@ -121,6 +121,13 @@ def _safe_path(rel_path: str | None) -> Path:
     candidate = (FILES_ROOT / rel_path).resolve()
     if not str(candidate).startswith(str(FILES_ROOT)):
         abort(400, description="invalid path")
+    return candidate
+
+
+def _safe_media_path(subpath: str) -> Path:
+    candidate = (DATA_DIR / subpath).resolve()
+    if not str(candidate).startswith(str(DATA_DIR)):
+        abort(400, description="invalid media path")
     return candidate
 
 
@@ -270,20 +277,20 @@ def _download_and_resize(image_url: str, product_id: int) -> Tuple[str | None, s
     if img is None:
         return None, None
 
-    def save_variant(img_obj: Image.Image, max_size: int, folder: Path, suffix: str) -> str | None:
+    def save_variant(img_obj: Image.Image, max_size: int, folder: Path, suffix: str, base_folder_name: str) -> str | None:
         try:
             clone = img_obj.copy()
             clone.thumbnail((max_size, max_size))
             filename = f"product_{product_id}{suffix}.jpg"
             out_path = folder / filename
             clone.save(out_path, format="JPEG", optimize=True, quality=85)
-            return f"/static/{folder.name}/{filename}"
+            return f"/media/{base_folder_name}/{filename}"
         except Exception as inner_exc:  # noqa: BLE001
             logger.warning("Save image variant failed: %s", inner_exc)
             return None
 
-    main_path = save_variant(img, 1600, UPLOADS_DIR, "")
-    thumb_path = save_variant(img, 600, THUMBS_DIR, "")
+    main_path = save_variant(img, 1600, IMAGES_DIR, "", "images")
+    thumb_path = save_variant(img, 600, THUMBS_DIR, "", "thumbs")
     return main_path, thumb_path
 
 
@@ -369,6 +376,14 @@ def webapp() -> Any:
 @app.route(ADMIN_FRONT_PATH)
 def admin_page() -> Any:
     return send_from_directory(app.static_folder, "admin.html")
+
+
+@app.route("/media/<path:filename>")
+def media_file(filename: str) -> Any:
+    path = _safe_media_path(filename)
+    if not path.exists() or not path.is_file():
+        abort(404)
+    return send_file(path)
 
 
 @app.route("/api/categories", methods=["GET", "POST"])
