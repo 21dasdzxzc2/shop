@@ -1,5 +1,7 @@
 import asyncio
+import copy
 import io
+import json
 import logging
 import os
 from datetime import datetime
@@ -57,16 +59,18 @@ THUMBS_DIR = Path(app.static_folder) / "thumbs"
 THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR = Path(app.static_folder) / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== In-memory data store (demo) =====
-categories: List[Dict[str, Any]] = [
+_default_categories: List[Dict[str, Any]] = [
     {"id": 1, "name": "Футболки", "icon": "👕"},
     {"id": 2, "name": "Толстовки", "icon": "🧥"},
     {"id": 3, "name": "Кроссовки", "icon": "👟"},
     {"id": 4, "name": "Аксессуары", "icon": "🧢"},
 ]
 
-products: List[Dict[str, Any]] = [
+_default_products: List[Dict[str, Any]] = [
     {
         "id": 1,
         "title": "Oversize худи графит",
@@ -105,9 +109,54 @@ products: List[Dict[str, Any]] = [
     },
 ]
 
-carts: Dict[int, Dict[int, int]] = {}
-logs: List[Dict[str, Any]] = []
+categories: List[Dict[str, Any]] = _load_json("categories.json", _default_categories)
+products: List[Dict[str, Any]] = _load_json("products.json", _default_products)
+carts_raw = _load_json("carts.json", {})
+carts: Dict[int, Dict[int, int]] = _normalize_carts(carts_raw)
+logs: List[Dict[str, Any]] = _load_json("logs.json", [])
 LOG_LIMIT = 200
+
+
+def _clone(obj: Any) -> Any:
+    return json.loads(json.dumps(obj, ensure_ascii=False))
+
+
+def _save_json(name: str, data: Any) -> None:
+    path = DATA_DIR / name
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to save %s: %s", name, exc)
+
+
+def _load_json(name: str, default: Any) -> Any:
+    path = DATA_DIR / name
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to read %s: %s", name, exc)
+    data = _clone(default)
+    _save_json(name, data)
+    return data
+
+
+def _normalize_carts(data: Dict[str, Any]) -> Dict[int, Dict[int, int]]:
+    normalized: Dict[int, Dict[int, int]] = {}
+    for user_id_str, cart in data.items():
+        try:
+            uid = int(user_id_str)
+        except Exception:
+            continue
+        if not isinstance(cart, dict):
+            continue
+        normalized[uid] = {}
+        for pid_str, qty in cart.items():
+            try:
+                normalized[uid][int(pid_str)] = int(qty)
+            except Exception:
+                continue
+    return normalized
 
 
 def _log_event(kind: str, user_id: int | None = None, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -120,6 +169,7 @@ def _log_event(kind: str, user_id: int | None = None, payload: Dict[str, Any] | 
     logs.append(entry)
     if len(logs) > LOG_LIMIT:
         logs.pop(0)
+    _save_json("logs.json", logs)
     return entry
 
 
@@ -318,6 +368,7 @@ def api_categories() -> Any:
     new_cat = {"id": _next_id(categories), "name": name, "icon": icon}
     categories.append(new_cat)
     _log_event("category_created", payload=new_cat)
+    _save_json("categories.json", categories)
     return jsonify(new_cat), 201
 
 
@@ -336,6 +387,7 @@ def api_category_update(cat_id: int) -> Any:
             category["name"] = name
         category["icon"] = icon or None
         _log_event("category_updated", payload=category)
+        _save_json("categories.json", categories)
         return jsonify(category)
 
     # DELETE
@@ -344,6 +396,8 @@ def api_category_update(cat_id: int) -> Any:
         if product["category_id"] == cat_id:
             product["category_id"] = None
     _log_event("category_deleted", payload={"id": cat_id})
+    _save_json("categories.json", categories)
+    _save_json("products.json", products)
     return jsonify({"ok": True})
 
 
@@ -386,6 +440,7 @@ def api_products() -> Any:
         new_product["thumb_url"] = new_product["image_url"]
     products.append(new_product)
     _log_event("product_created", payload=new_product)
+    _save_json("products.json", products)
     return jsonify(new_product), 201
 
 
@@ -406,6 +461,7 @@ def api_cart_add() -> Any:
     cart = carts.setdefault(int(user_id), {})
     cart[int(product_id)] = cart.get(int(product_id), 0) + max(1, qty)
     _log_event("cart_add", user_id=int(user_id), payload={"product_id": int(product_id), "qty": qty})
+    _save_json("carts.json", carts)
     return jsonify({"ok": True})
 
 
@@ -432,6 +488,7 @@ def api_cart_clear() -> Any:
         return jsonify({"ok": False, "error": "user_id required"}), 400
     carts[int(user_id)] = {}
     _log_event("cart_clear", user_id=int(user_id))
+    _save_json("carts.json", carts)
     return jsonify({"ok": True})
 
 
@@ -482,6 +539,7 @@ def api_cart_checkout() -> Any:
             logger.warning("Failed to notify admin about checkout for user %s", user_id)
 
     carts[int(user_id)] = {}
+    _save_json("carts.json", carts)
     return jsonify({"ok": True, "message": "Заказ принят. Менеджер свяжется в Telegram."})
 
 
