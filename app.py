@@ -4,7 +4,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import requests
 from flask import Flask, abort, jsonify, request, send_from_directory
@@ -55,6 +55,8 @@ bot = Bot(token=BOT_TOKEN, request=request_client)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 THUMBS_DIR = Path(app.static_folder) / "thumbs"
 THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR = Path(app.static_folder) / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===== In-memory data store (demo) =====
 categories: List[Dict[str, Any]] = [
@@ -70,8 +72,8 @@ products: List[Dict[str, Any]] = [
         "title": "Oversize худи графит",
         "price": 5990,
         "category_id": 2,
-        "image_url": "/static/img/hoodie.svg",
-        "thumb_url": "/static/img/hoodie.svg",
+        "image_url": "/static/img/placeholder.svg",
+        "thumb_url": "/static/img/placeholder.svg",
         "description": "Плотный футер, удлинённый крой.",
     },
     {
@@ -79,8 +81,8 @@ products: List[Dict[str, Any]] = [
         "title": "Базовая белая футболка",
         "price": 1990,
         "category_id": 1,
-        "image_url": "/static/img/tshirt.svg",
-        "thumb_url": "/static/img/tshirt.svg",
+        "image_url": "/static/img/placeholder.svg",
+        "thumb_url": "/static/img/placeholder.svg",
         "description": "100% хлопок, оверсайз.",
     },
     {
@@ -88,8 +90,8 @@ products: List[Dict[str, Any]] = [
         "title": "Кроссовки street black",
         "price": 8990,
         "category_id": 3,
-        "image_url": "/static/img/sneakers.svg",
-        "thumb_url": "/static/img/sneakers.svg",
+        "image_url": "/static/img/placeholder.svg",
+        "thumb_url": "/static/img/placeholder.svg",
         "description": "Лёгкие, нескользящая подошва.",
     },
     {
@@ -97,8 +99,8 @@ products: List[Dict[str, Any]] = [
         "title": "Рюкзак urban",
         "price": 4990,
         "category_id": 4,
-        "image_url": "/static/img/bag.svg",
-        "thumb_url": "/static/img/bag.svg",
+        "image_url": "/static/img/placeholder.svg",
+        "thumb_url": "/static/img/placeholder.svg",
         "description": "14\", защита от влаги, скрытый карман.",
     },
 ]
@@ -125,7 +127,7 @@ def _next_id(items: List[Dict[str, Any]]) -> int:
     return max((item["id"] for item in items), default=0) + 1
 
 
-def send_message_sync(chat_id: int, text: str, reply_markup: Any | None = None) -> None:
+def send_message_sync(chat_id: int, text: str, reply_markup: Any | None = None) -> bool:
     """Send Telegram message using async bot inside sync Flask handler."""
     async def _send() -> None:
         try:
@@ -136,10 +138,16 @@ def send_message_sync(chat_id: int, text: str, reply_markup: Any | None = None) 
             )
         except (TimedOut, NetworkError) as exc:
             logger.warning("Send message timeout/network error: %s", exc)
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("Send message failed: %s", exc)
+            raise
 
-    asyncio.run(_send())
+    try:
+        asyncio.run(_send())
+        return True
+    except Exception:
+        return False
 
 
 def _make_thumbnail(image_url: str, product_id: int, max_size: int = 600) -> str | None:
@@ -157,6 +165,60 @@ def _make_thumbnail(image_url: str, product_id: int, max_size: int = 600) -> str
     except Exception as exc:  # noqa: BLE001
         logger.warning("Thumbnail generation failed for %s: %s", image_url, exc)
         return None
+
+
+def _resolve_postimg(url: str) -> str:
+    """If URL is postimg.cc page, convert to direct i.postimg.cc link (jpg)."""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        host = (parsed.netloc or "").lower()
+        if "postimg.cc" in host:
+            parts = [p for p in parsed.path.split("/") if p]
+            if len(parts) >= 2:
+                album, name = parts[-2], parts[-1]
+                # try jpg by default
+                return f"https://i.postimg.cc/{album}/{name}.jpg"
+        return url
+    except Exception:
+        return url
+
+
+def _download_and_resize(image_url: str, product_id: int) -> Tuple[str | None, str | None]:
+    """Download source image, save main (scaled to 1600) and thumb (scaled to 600)."""
+    source_url = _resolve_postimg(image_url)
+    candidates = [source_url]
+    if "i.postimg.cc" in source_url and source_url.endswith(".jpg"):
+        candidates.append(source_url[:-4] + ".png")
+    img = None
+    for candidate in candidates:
+        try:
+            resp = requests.get(candidate, timeout=20)
+            resp.raise_for_status()
+            img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+            break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Download image failed for %s: %s", candidate, exc)
+            img = None
+    if img is None:
+        return None, None
+
+    def save_variant(img_obj: Image.Image, max_size: int, folder: Path, suffix: str) -> str | None:
+        try:
+            clone = img_obj.copy()
+            clone.thumbnail((max_size, max_size))
+            filename = f"product_{product_id}{suffix}.jpg"
+            out_path = folder / filename
+            clone.save(out_path, format="JPEG", optimize=True, quality=85)
+            return f"/static/{folder.name}/{filename}"
+        except Exception as inner_exc:  # noqa: BLE001
+            logger.warning("Save image variant failed: %s", inner_exc)
+            return None
+
+    main_path = save_variant(img, 1600, UPLOADS_DIR, "")
+    thumb_path = save_variant(img, 600, THUMBS_DIR, "")
+    return main_path, thumb_path
 
 
 def _verify_secret_token() -> None:
@@ -315,12 +377,13 @@ def api_products() -> Any:
         "thumb_url": thumb_url,
         "description": description,
     }
+    main_path, thumb_path = _download_and_resize(image_url=image_url, product_id=new_product["id"])
+    if main_path:
+        new_product["image_url"] = main_path
+    if thumb_path:
+        new_product["thumb_url"] = thumb_path
     if not new_product["thumb_url"]:
-        generated = _make_thumbnail(image_url=image_url, product_id=new_product["id"])
-        if generated:
-            new_product["thumb_url"] = generated
-        else:
-            new_product["thumb_url"] = image_url
+        new_product["thumb_url"] = new_product["image_url"]
     products.append(new_product)
     _log_event("product_created", payload=new_product)
     return jsonify(new_product), 201
@@ -415,7 +478,8 @@ def api_cart_checkout() -> Any:
         lines.append(f"Итого: {int(total)}₽")
         if note:
             lines.append(f"Комментарий: {note}")
-        send_message_sync(chat_id=ADMIN_CHAT_ID, text="\n".join(lines))
+        if not send_message_sync(chat_id=ADMIN_CHAT_ID, text="\n".join(lines)):
+            logger.warning("Failed to notify admin about checkout for user %s", user_id)
 
     carts[int(user_id)] = {}
     return jsonify({"ok": True, "message": "Заказ принят. Менеджер свяжется в Telegram."})
