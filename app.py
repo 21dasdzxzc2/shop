@@ -4,12 +4,15 @@ import io
 import json
 import logging
 import os
+import shutil
+import tempfile
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import requests
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 from PIL import Image
 from telegram import (
     Bot,
@@ -55,12 +58,11 @@ request_client = HTTPXRequest(
 )
 bot = Bot(token=BOT_TOKEN, request=request_client)
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-THUMBS_DIR = Path(app.static_folder) / "thumbs"
-UPLOADS_DIR = Path(app.static_folder) / "uploads"
 DATA_DIR = Path("data")
-THUMBS_DIR.mkdir(parents=True, exist_ok=True)
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+IMAGES_DIR = DATA_DIR / "images"
+THUMBS_DIR = DATA_DIR / "thumbs"
+for d in (DATA_DIR, IMAGES_DIR, THUMBS_DIR):
+    d.mkdir(parents=True, exist_ok=True)
 
 def _clone(obj: Any) -> Any:
     return json.loads(json.dumps(obj, ensure_ascii=False))
@@ -110,14 +112,27 @@ def _is_banned(user_id: int | None) -> bool:
     return any(ban.get("user_id") == int(user_id) for ban in bans)
 
 
-# ===== In-memory data store (loaded from data/*.json) =====
-categories: List[Dict[str, Any]] = _load_json("categories.json", [])
-products: List[Dict[str, Any]] = _load_json("products.json", [])
-carts_raw = _load_json("carts.json", {})
-carts: Dict[int, Dict[int, int]] = _normalize_carts(carts_raw)
-logs: List[Dict[str, Any]] = _load_json("logs.json", [])
+def _safe_media_path(rel_path: str) -> Path:
+    candidate = (DATA_DIR / rel_path).resolve()
+    if not str(candidate).startswith(str(DATA_DIR.resolve())):
+        abort(400, description="invalid media path")
+    return candidate
+
+
 LOG_LIMIT = 200
-bans: List[Dict[str, Any]] = _load_json("bans.json", [])
+
+
+def _load_all_data() -> None:
+    global categories, products, carts, logs, bans  # noqa: PLW0603
+    categories = _load_json("categories.json", [])
+    products = _load_json("products.json", [])
+    carts_raw = _load_json("carts.json", {})
+    carts = _normalize_carts(carts_raw)
+    logs = _load_json("logs.json", [])
+    bans = _load_json("bans.json", [])
+
+
+_load_all_data()
 
 
 def _log_event(kind: str, user_id: int | None = None, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -183,23 +198,6 @@ def notify_admin(text: str) -> bool:
     return False
 
 
-def _make_thumbnail(image_url: str, product_id: int, max_size: int = 600) -> str | None:
-    """Fetch image_url and create a resized thumbnail; return static path or None."""
-    try:
-        resp = requests.get(image_url, timeout=15)
-        resp.raise_for_status()
-        img = Image.open(io.BytesIO(resp.content))
-        img = img.convert("RGB")
-        img.thumbnail((max_size, max_size))
-        filename = f"product_{product_id}.jpg"
-        out_path = THUMBS_DIR / filename
-        img.save(out_path, format="JPEG", optimize=True, quality=82)
-        return f"/static/thumbs/{filename}"
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Thumbnail generation failed for %s: %s", image_url, exc)
-        return None
-
-
 def _resolve_postimg(url: str) -> str:
     """If URL is postimg.cc page, convert to direct i.postimg.cc link (jpg)."""
     try:
@@ -237,20 +235,20 @@ def _download_and_resize(image_url: str, product_id: int) -> Tuple[str | None, s
     if img is None:
         return None, None
 
-    def save_variant(img_obj: Image.Image, max_size: int, folder: Path, suffix: str) -> str | None:
+    def save_variant(img_obj: Image.Image, max_size: int, folder: Path, suffix: str, url_prefix: str) -> str | None:
         try:
             clone = img_obj.copy()
             clone.thumbnail((max_size, max_size))
             filename = f"product_{product_id}{suffix}.jpg"
             out_path = folder / filename
             clone.save(out_path, format="JPEG", optimize=True, quality=85)
-            return f"/static/{folder.name}/{filename}"
+            return f"{url_prefix}/{filename}"
         except Exception as inner_exc:  # noqa: BLE001
             logger.warning("Save image variant failed: %s", inner_exc)
             return None
 
-    main_path = save_variant(img, 1600, UPLOADS_DIR, "")
-    thumb_path = save_variant(img, 600, THUMBS_DIR, "")
+    main_path = save_variant(img, 1600, IMAGES_DIR, "", "/media/images")
+    thumb_path = save_variant(img, 600, THUMBS_DIR, "", "/media/thumbs")
     return main_path, thumb_path
 
 
@@ -335,6 +333,14 @@ def webapp() -> Any:
 @app.route("/admin")
 def admin_page() -> Any:
     return send_from_directory(app.static_folder, "admin.html")
+
+
+@app.route("/media/<path:filename>")
+def media(filename: str) -> Any:
+    path = _safe_media_path(filename)
+    if not path.exists() or not path.is_file():
+        abort(404)
+    return send_file(path)
 
 
 @app.route("/api/categories", methods=["GET", "POST"])
@@ -572,6 +578,70 @@ def api_admin_bans_delete(user_id: int) -> Any:
         return jsonify({"ok": False, "error": "not found"}), 404
     _log_event("user_unbanned", user_id=user_id)
     _save_json("bans.json", bans)
+    return jsonify({"ok": True})
+
+
+def _create_data_zip(tmpdir: Path, name: str = "data.zip") -> Path:
+    zip_path = tmpdir / name
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in DATA_DIR.rglob("*"):
+            if path.is_file():
+                zf.write(path, arcname=path.relative_to(DATA_DIR))
+    return zip_path
+
+
+@app.route("/api/admin/data/download", methods=["GET"])
+def api_admin_data_download() -> Any:
+    _require_admin()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = _create_data_zip(Path(tmpdir))
+        return send_file(zip_path, as_attachment=True, download_name="data.zip")
+
+
+def _safe_extract(zip_path: Path) -> None:
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for member in zf.infolist():
+            name = member.filename
+            if not name or name.endswith("/") and len(name.strip("/")) == 0:
+                continue
+            if name.startswith("/") or ".." in Path(name).parts:
+                raise ValueError("unsafe path in archive")
+            dest_path = (DATA_DIR / name).resolve()
+            if not str(dest_path).startswith(str(DATA_DIR.resolve())):
+                raise ValueError("unsafe path in archive")
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            if member.is_dir():
+                dest_path.mkdir(parents=True, exist_ok=True)
+                continue
+            with zf.open(member) as src, open(dest_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+
+@app.route("/api/admin/data/upload", methods=["POST"])
+def api_admin_data_upload() -> Any:
+    _require_admin()
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"ok": False, "error": "file_required"}), 400
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir) / "upload.zip"
+        file.save(tmp_path)
+        try:
+            for child in DATA_DIR.iterdir():
+                if child.is_file():
+                    child.unlink()
+                else:
+                    shutil.rmtree(child)
+            _safe_extract(tmp_path)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to extract data upload: %s", exc)
+            return jsonify({"ok": False, "error": "extract_failed"}), 400
+
+    for d in (IMAGES_DIR, THUMBS_DIR):
+        d.mkdir(parents=True, exist_ok=True)
+
+    _load_all_data()
     return jsonify({"ok": True})
 
 

@@ -92,6 +92,22 @@
       </div>
       <div id="banList" class="cart-list" style="margin-top:12px; max-height: 240px;"></div>
     </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Архив data</div>
+      </div>
+      <div class="input stacked" style="margin-top:8px;">
+        <label>Скачать текущую data.zip</label>
+        <button class="pill ghost" id="downloadData">Скачать</button>
+      </div>
+      <div class="input stacked" style="margin-top:8px;">
+        <label>Загрузить новую data.zip (заменит существующую)</label>
+        <input type="file" id="dataFile" accept=".zip">
+        <button class="pill accent" id="uploadData" style="margin-top:6px;">Загрузить и применить</button>
+        <div id="dataStatus" class="muted small" style="margin-top:6px;"></div>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -276,6 +292,33 @@
       loadBans();
     }
 
+    function downloadData() {
+      const token = getToken();
+      const url = `/api/admin/data/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      window.open(url, '_blank');
+    }
+
+    async function uploadData() {
+      const fileInput = document.getElementById('dataFile');
+      const statusEl = document.getElementById('dataStatus');
+      if (!fileInput.files.length) return alert('Выберите data.zip');
+      statusEl.textContent = 'Загружаю...';
+      const token = getToken();
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      const res = await fetch('/api/admin/data/upload', {
+        method: 'POST',
+        headers: token ? {'X-Admin-Token': token} : {},
+        body: fd,
+      });
+      if (!res.ok) {
+        statusEl.textContent = 'Ошибка загрузки';
+        return;
+      }
+      statusEl.textContent = 'Загружено и применено. Перезагрузите страницу.';
+      fileInput.value = '';
+    }
+
     document.getElementById('reloadCats').onclick = loadCats;
     document.getElementById('createCat').onclick = createCat;
     document.getElementById('reloadProducts').onclick = loadProducts;
@@ -283,6 +326,8 @@
     document.getElementById('reloadLogs').onclick = loadLogs;
     document.getElementById('reloadBans').onclick = loadBans;
     document.getElementById('addBan').onclick = addBan;
+    document.getElementById('downloadData').onclick = downloadData;
+    document.getElementById('uploadData').onclick = uploadData;
 
     loadCats();
     loadProducts();
