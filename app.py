@@ -7,9 +7,11 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+import tempfile
+import zipfile
 
 import requests
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 from PIL import Image
 from telegram import (
     Bot,
@@ -28,6 +30,10 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
 ADMIN_CHAT_ID_RAW = os.environ.get("ADMIN_CHAT_ID")
 ADMIN_PANEL_URL = os.environ.get("ADMIN_PANEL_URL")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN")
+ADMIN_FRONT_PATH = os.environ.get(
+    "ADMIN_FRONT_PATH", "/admin312fhdse38q8dashbdczjkx32131dcsDAShjbbn213"
+)
+FILES_ROOT = Path(os.environ.get("FILES_ROOT", ".")).resolve()
 
 ADMIN_CHAT_ID = None
 if ADMIN_CHAT_ID_RAW:
@@ -110,6 +116,14 @@ def _is_banned(user_id: int | None) -> bool:
     return any(ban.get("user_id") == int(user_id) for ban in bans)
 
 
+def _safe_path(rel_path: str | None) -> Path:
+    rel_path = rel_path or "."
+    candidate = (FILES_ROOT / rel_path).resolve()
+    if not str(candidate).startswith(str(FILES_ROOT)):
+        abort(400, description="invalid path")
+    return candidate
+
+
 # ===== In-memory data store (loaded from data/*.json) =====
 categories: List[Dict[str, Any]] = _load_json("categories.json", [])
 products: List[Dict[str, Any]] = _load_json("products.json", [])
@@ -180,6 +194,25 @@ def notify_admin(text: str) -> bool:
         logger.warning("Fallback sendMessage failed: %s %s", resp.status_code, resp.text)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Fallback sendMessage exception: %s", exc)
+    return False
+
+
+def send_admin_document(file_path: Path, caption: str = "") -> bool:
+    if not ADMIN_CHAT_ID:
+        return False
+    try:
+        with file_path.open("rb") as f:
+            resp = requests.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument",
+                data={"chat_id": ADMIN_CHAT_ID, "caption": caption},
+                files={"document": (file_path.name, f)},
+                timeout=30,
+            )
+        if resp.ok:
+            return True
+        logger.warning("sendDocument failed: %s %s", resp.status_code, resp.text)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sendDocument exception: %s", exc)
     return False
 
 
@@ -277,9 +310,10 @@ def _require_admin() -> None:
 def _resolve_admin_url() -> str:
     if ADMIN_PANEL_URL:
         return ADMIN_PANEL_URL
-    if WEBAPP_URL.endswith("/webapp"):
-        return WEBAPP_URL.rsplit("/webapp", 1)[0] + "/admin"
-    return WEBAPP_URL.rstrip("/") + "/admin"
+    base = WEBAPP_URL
+    if base.endswith("/webapp"):
+        base = base.rsplit("/webapp", 1)[0]
+    return base.rstrip("/") + ADMIN_FRONT_PATH
 
 
 def _handle_update(update: Update) -> None:
@@ -332,7 +366,7 @@ def webapp() -> Any:
     return send_from_directory(app.static_folder, "index.html")
 
 
-@app.route("/admin")
+@app.route(ADMIN_FRONT_PATH)
 def admin_page() -> Any:
     return send_from_directory(app.static_folder, "admin.html")
 
@@ -572,6 +606,123 @@ def api_admin_bans_delete(user_id: int) -> Any:
         return jsonify({"ok": False, "error": "not found"}), 404
     _log_event("user_unbanned", user_id=user_id)
     _save_json("bans.json", bans)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/export", methods=["POST"])
+def api_admin_export() -> Any:
+    _require_admin()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "data_export.zip"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for path in DATA_DIR.glob("*"):
+                if path.is_file():
+                    zf.write(path, arcname=path.name)
+        if not send_admin_document(zip_path, caption="Экспорт data/"):
+            return jsonify({"ok": False, "error": "failed_to_send"}), 500
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/files", methods=["GET"])
+def api_admin_files_list() -> Any:
+    _require_admin()
+    rel_path = request.args.get("path", ".")
+    base = _safe_path(rel_path)
+    if not base.exists():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    if base.is_file():
+        info = base.stat()
+        return jsonify(
+            {
+                "ok": True,
+                "file": {
+                    "name": base.name,
+                    "path": str(base.relative_to(FILES_ROOT)),
+                    "is_dir": False,
+                    "size": info.st_size,
+                    "mtime": info.st_mtime,
+                }
+            }
+        )
+    items = []
+    for entry in base.iterdir():
+        try:
+            info = entry.stat()
+        except Exception:
+            continue
+        items.append(
+            {
+                "name": entry.name,
+                "path": str(entry.relative_to(FILES_ROOT)),
+                "is_dir": entry.is_dir(),
+                "size": info.st_size,
+                "mtime": info.st_mtime,
+            }
+        )
+    return jsonify({"ok": True, "items": items, "cwd": str(base.relative_to(FILES_ROOT))})
+
+
+@app.route("/api/admin/files/download", methods=["GET"])
+def api_admin_files_download() -> Any:
+    _require_admin()
+    rel_path = request.args.get("path")
+    if not rel_path:
+        return jsonify({"ok": False, "error": "path_required"}), 400
+    path = _safe_path(rel_path)
+    if not path.is_file():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    return send_file(path, as_attachment=True)
+
+
+@app.route("/api/admin/files/upload", methods=["POST"])
+def api_admin_files_upload() -> Any:
+    _require_admin()
+    rel_dir = request.form.get("path", ".")
+    directory = _safe_path(rel_dir)
+    if not directory.exists():
+        directory.mkdir(parents=True, exist_ok=True)
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"ok": False, "error": "file_required"}), 400
+    dest = directory / file.filename
+    file.save(dest)
+    return jsonify({"ok": True, "path": str(dest.relative_to(FILES_ROOT))})
+
+
+@app.route("/api/admin/files/rename", methods=["POST"])
+def api_admin_files_rename() -> Any:
+    _require_admin()
+    body = request.get_json(force=True, silent=True) or {}
+    src = body.get("src")
+    dst = body.get("dst")
+    if not src or not dst:
+        return jsonify({"ok": False, "error": "src_dst_required"}), 400
+    src_path = _safe_path(src)
+    dst_path = _safe_path(dst)
+    if not src_path.exists():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    src_path.rename(dst_path)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/files/delete", methods=["POST"])
+def api_admin_files_delete() -> Any:
+    _require_admin()
+    body = request.get_json(force=True, silent=True) or {}
+    rel_path = body.get("path")
+    if not rel_path:
+        return jsonify({"ok": False, "error": "path_required"}), 400
+    path = _safe_path(rel_path)
+    if not path.exists():
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    if path.is_dir():
+        try:
+            path.rmdir()
+        except OSError:
+            return jsonify({"ok": False, "error": "dir_not_empty"}), 400
+    else:
+        path.unlink()
     return jsonify({"ok": True})
 
 

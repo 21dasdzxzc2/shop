@@ -92,6 +92,32 @@
       </div>
       <div id="banList" class="cart-list" style="margin-top:12px; max-height: 240px;"></div>
     </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Экспорт данных</div>
+      </div>
+      <p class="muted small">Отправляет архив data/ в Telegram админу (через токен).</p>
+      <button class="pill accent" id="exportData">Выгрузить data</button>
+      <div id="exportStatus" class="muted small" style="margin-top:6px;"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-top">
+        <div class="panel-title">Файлы</div>
+        <button class="pill ghost" id="reloadFiles">Обновить</button>
+      </div>
+      <div class="input stacked" style="margin-top:10px;">
+        <label>Текущий путь</label>
+        <input id="fsPath" value="." placeholder=".">
+      </div>
+      <div class="file-list cart-list" id="fileList" style="max-height:320px;"></div>
+      <div class="input stacked" style="margin-top:10px;">
+        <label>Загрузить файл в текущий путь</label>
+        <input type="file" id="uploadFile">
+        <button class="pill accent" id="uploadBtn" style="margin-top:6px;">Загрузить</button>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -276,6 +302,134 @@
       loadBans();
     }
 
+    async function exportData() {
+      const statusEl = document.getElementById('exportStatus');
+      statusEl.textContent = 'Готовлю архив...';
+      try {
+        const res = await api('/api/admin/export', {method: 'POST'});
+        if (res.ok) {
+          statusEl.textContent = 'Отправлено админу в Telegram.';
+        } else {
+          statusEl.textContent = 'Ошибка отправки.';
+        }
+      } catch (e) {
+        statusEl.textContent = 'Ошибка отправки.';
+      }
+    }
+
+    function fsApi(path, opts = {}) {
+      const token = getToken();
+      const headers = opts.headers || {};
+      if (token) headers['X-Admin-Token'] = token;
+      return fetch(path, {...opts, headers});
+    }
+
+    async function loadFiles(path = null) {
+      const p = path ?? document.getElementById('fsPath').value.trim() || '.';
+      document.getElementById('fsPath').value = p;
+      const token = getToken();
+      const res = await fetch(`/api/admin/files?path=${encodeURIComponent(p)}`, {
+        headers: token ? {'X-Admin-Token': token} : {},
+      });
+      if (!res.ok) {
+        alert('Ошибка загрузки списка файлов');
+        return;
+      }
+      const data = await res.json();
+      renderFiles(data.items || [], data.cwd || p);
+    }
+
+    function renderFiles(items, cwd) {
+      const box = document.getElementById('fileList');
+      box.innerHTML = '';
+      const upBtn = document.createElement('button');
+      upBtn.className = 'pill ghost-sm';
+      upBtn.textContent = '⟵ Вверх';
+      upBtn.onclick = () => {
+        const parts = cwd.split('/').filter(Boolean);
+        parts.pop();
+        const newPath = parts.join('/') || '.';
+        loadFiles(newPath);
+      };
+      const upWrap = document.createElement('div');
+      upWrap.className = 'cart-row';
+      upWrap.appendChild(upBtn);
+      box.appendChild(upWrap);
+
+      items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'cart-row';
+        row.innerHTML = `
+          <div>
+            <div class="cart-title">${item.is_dir ? '📁' : '📄'} ${item.name}</div>
+            <div class="muted small">${item.is_dir ? 'папка' : (item.size || 0) + ' байт'}</div>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button class="pill ghost-sm open-file">Открыть</button>
+            ${item.is_dir ? '' : `<button class="pill ghost-sm download">Скачать</button>`}
+            <button class="pill ghost-sm rename">Переименовать</button>
+            <button class="pill ghost-sm" style="color:#ef4444;">Удалить</button>
+          </div>
+        `;
+        row.querySelector('.open-file').onclick = () => {
+          if (item.is_dir) {
+            loadFiles(item.path);
+          } else {
+            const token = getToken();
+            const url = `/api/admin/files/download?path=${encodeURIComponent(item.path)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+            window.open(url, '_blank');
+          }
+        };
+        if (!item.is_dir) {
+          row.querySelector('.download').onclick = () => {
+            const token = getToken();
+            const url = `/api/admin/files/download?path=${encodeURIComponent(item.path)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+            window.open(url, '_blank');
+          };
+        }
+        row.querySelector('.rename').onclick = async () => {
+          const newName = prompt('Новое имя', item.name);
+          if (!newName) return;
+          const newPath = (item.path.split('/').slice(0, -1).filter(Boolean).join('/') + '/' + newName).replace('//','/');
+          await api('/api/admin/files/rename', {
+            method: 'POST',
+            body: JSON.stringify({src: item.path, dst: newPath}),
+          });
+          loadFiles(cwd);
+        };
+        row.querySelector('button[style*="ef4444"]').onclick = async () => {
+          if (!confirm(`Удалить ${item.name}?`)) return;
+          await api('/api/admin/files/delete', {
+            method: 'POST',
+            body: JSON.stringify({path: item.path}),
+          });
+          loadFiles(cwd);
+        };
+        box.appendChild(row);
+      });
+    }
+
+    async function uploadFile() {
+      const fileInput = document.getElementById('uploadFile');
+      if (!fileInput.files.length) return alert('Выберите файл');
+      const path = document.getElementById('fsPath').value.trim() || '.';
+      const token = getToken();
+      const fd = new FormData();
+      fd.append('path', path);
+      fd.append('file', fileInput.files[0]);
+      const res = await fetch('/api/admin/files/upload', {
+        method: 'POST',
+        headers: token ? {'X-Admin-Token': token} : {},
+        body: fd,
+      });
+      if (!res.ok) {
+        alert('Ошибка загрузки');
+        return;
+      }
+      loadFiles(path);
+      fileInput.value = '';
+    }
+
     document.getElementById('reloadCats').onclick = loadCats;
     document.getElementById('createCat').onclick = createCat;
     document.getElementById('reloadProducts').onclick = loadProducts;
@@ -283,11 +437,15 @@
     document.getElementById('reloadLogs').onclick = loadLogs;
     document.getElementById('reloadBans').onclick = loadBans;
     document.getElementById('addBan').onclick = addBan;
+    document.getElementById('exportData').onclick = exportData;
+    document.getElementById('reloadFiles').onclick = () => loadFiles();
+    document.getElementById('uploadBtn').onclick = uploadFile;
 
     loadCats();
     loadProducts();
     loadLogs();
     loadBans();
+    loadFiles();
   </script>
 </body>
 </html>
