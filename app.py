@@ -150,9 +150,9 @@ def resolve_admin_url() -> str:
     return base.rstrip("/") + "/admin"
 
 
-def send_sync(chat_id: int, text: str, markup: Any | None = None) -> bool:
+def send_sync(chat_id: int, text: str, reply_markup: Any | None = None) -> bool:
     async def run() -> None:
-        await bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
+        await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
     try:
         asyncio.run(run())
