@@ -214,14 +214,24 @@
       const grid = document.getElementById('productList');
       grid.innerHTML = '';
       (data.items || []).forEach(p => {
+        const photos = (p.photos && p.photos.length ? p.photos : [{image_url: p.image_url, thumb_url: p.thumb_url}]).filter(Boolean);
+        const firstPhoto = photos[0] || {};
         const card = document.createElement('div');
         card.className = 'card product';
         card.innerHTML = `
-          <div class="img"><img src="${p.image_url}" alt=""></div>
+          <div class="img"><img src="${firstPhoto.image_url || p.image_url}" alt=""></div>
           <div class="product-title">${p.title}</div>
           <div class="muted small">ID: ${p.id} · Категория: ${p.category_id}</div>
-          <div class="product-footer"><div class="price">${p.price} ₽</div></div>
+          <div class="product-footer">
+            <div class="price">${p.price} ₽</div>
+            <button class="pill ghost-sm delete-product">Удалить</button>
+          </div>
         `;
+        card.querySelector('.delete-product').onclick = async () => {
+          if (!confirm(`Удалить товар ${p.title}?`)) return;
+          await api(`/api/products?id=${p.id}`, {method: 'DELETE'});
+          loadProducts();
+        };
         grid.appendChild(card);
       });
     }

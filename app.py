@@ -312,7 +312,18 @@ def api_products() -> Any:
             p_copy["photos"] = photos
             normalized.append(p_copy)
         return jsonify({"items": normalized})
-        return jsonify({"items": items})
+    if request.method == "DELETE":
+        require_admin()
+        pid = request.args.get("id", type=int)
+        if not pid:
+            return jsonify({"ok": False, "error": "product_id required"}), 400
+        before = len(products)
+        products[:] = [p for p in products if p["id"] != pid]
+        if len(products) == before:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+        log_event("product_deleted", payload={"id": pid})
+        save_json("products.json", products)
+        return jsonify({"ok": True})
     require_admin()
     body = request.get_json(force=True, silent=True) or {}
     title = (body.get("title") or "").strip()
