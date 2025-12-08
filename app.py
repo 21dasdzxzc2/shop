@@ -324,10 +324,7 @@ def api_category_update(cat_id: int) -> Any:
 def api_products() -> Any:
     if request.method == "GET":
         cid = request.args.get("category_id", type=int)
-        if cid:
-            items = [p for p in products if p["category_id"] == cid]
-        else:
-            items = []
+        items = [p for p in products if p["category_id"] == cid] if cid else products
         resp = []
         for p in items:
             p_copy = dict(p)
