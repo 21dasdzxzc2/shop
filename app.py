@@ -203,12 +203,12 @@ def download_image(url: str) -> Image.Image | None:
     return img
 
 
-def save_variants(img: Image.Image, product_id: int) -> Tuple[str | None, str | None]:
+def save_variants(img: Image.Image, product_id: int, idx: int) -> Tuple[str | None, str | None]:
     def save_copy(max_size: int, folder: Path, prefix: str) -> str | None:
         try:
             clone = img.copy()
             clone.thumbnail((max_size, max_size))
-            name = f"product_{product_id}.jpg"
+            name = f"product_{product_id}_{idx}.jpg"
             path = folder / name
             clone.save(path, format="JPEG", optimize=True, quality=85)
             return f"/media/{prefix}/{name}"
@@ -298,13 +298,28 @@ def api_products() -> Any:
     if request.method == "GET":
         cid = request.args.get("category_id", type=int)
         items = [p for p in products if p["category_id"] == cid] if cid else products
+        normalized = []
+        for p in items:
+            photos = p.get("photos") or []
+            if not photos:
+                photos = [
+                    {
+                        "image_url": p.get("image_url") or "/static/img/placeholder.svg",
+                        "thumb_url": p.get("thumb_url") or p.get("image_url") or "/static/img/placeholder.svg",
+                    }
+                ]
+            p_copy = dict(p)
+            p_copy["photos"] = photos
+            normalized.append(p_copy)
+        return jsonify({"items": normalized})
         return jsonify({"items": items})
     require_admin()
     body = request.get_json(force=True, silent=True) or {}
     title = (body.get("title") or "").strip()
     price = body.get("price")
     category_id = body.get("category_id")
-    image_url = (body.get("image_url") or "").strip() or "/static/img/placeholder.svg"
+    images_list = body.get("images") or []
+    image_url = (body.get("image_url") or "").strip()
     thumb_url = (body.get("thumb_url") or "").strip()
     description = (body.get("description") or "").strip()
     if not title or price is None or category_id is None:
@@ -314,19 +329,39 @@ def api_products() -> Any:
         "title": title,
         "price": float(price),
         "category_id": int(category_id),
-        "image_url": image_url,
+        "image_url": image_url or "/static/img/placeholder.svg",
         "thumb_url": thumb_url,
         "description": description,
     }
-    img = download_image(image_url)
-    if img:
-        main_url, thumb = save_variants(img, product["id"])
-        if main_url:
-            product["image_url"] = main_url
-        if thumb:
-            product["thumb_url"] = thumb
-    if not product["thumb_url"]:
-        product["thumb_url"] = product["image_url"]
+    photos: List[Dict[str, str]] = []
+    urls = images_list if isinstance(images_list, list) and images_list else []
+    if image_url:
+        urls.insert(0, image_url)
+    seen = []
+    for idx, url in enumerate(urls):
+        url_clean = (url or "").strip()
+        if not url_clean or url_clean in seen:
+            continue
+        seen.append(url_clean)
+        img = download_image(url_clean)
+        if img:
+            main_url, thumb = save_variants(img, product["id"], idx)
+            photos.append(
+                {
+                    "image_url": main_url or url_clean,
+                    "thumb_url": thumb or main_url or url_clean,
+                }
+            )
+    if not photos:
+        photos.append(
+            {
+                "image_url": image_url or "/static/img/placeholder.svg",
+                "thumb_url": thumb_url or image_url or "/static/img/placeholder.svg",
+            }
+        )
+    product["photos"] = photos
+    product["image_url"] = photos[0]["image_url"]
+    product["thumb_url"] = photos[0]["thumb_url"]
     products.append(product)
     log_event("product_created", payload=product)
     save_json("products.json", products)
@@ -413,7 +448,7 @@ def api_cart_checkout() -> Any:
     response: Dict[str, Any] = {"ok": True}
     lines: List[str] = []
     if mode == "samopis":
-        greeting = f"Доброго времени суток, {SAMOPIS_NICK}!" if SAMOPIS_NICK else "Доброго времени суток!"
+        greeting = f"Доброго времени суток." if SAMOPIS_NICK else "Доброго времени суток."
         lines.append(greeting)
         lines.append("Хотел бы приобрести следующие товары:")
     else:

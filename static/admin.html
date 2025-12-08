@@ -60,6 +60,10 @@
           <input id="pImage" placeholder="https://postimg.cc/pyZP00kG/51269839">
         </div>
         <div class="input stacked" style="margin-top:8px;">
+          <label>Доп. картинки (по одной в строке или через запятую)</label>
+          <textarea id="pImages" rows="3" placeholder="https://...jpg\nhttps://...png"></textarea>
+        </div>
+        <div class="input stacked" style="margin-top:8px;">
           <label>URL превью (миниатюра)</label>
           <input id="pThumb" placeholder="Опционально, сделается сама если не указать">
         </div>
@@ -232,17 +236,20 @@
       const price = parseFloat(document.getElementById('pPrice').value);
       const category_id = parseInt(document.getElementById('pCategory').value, 10);
       const image_url = document.getElementById('pImage').value.trim() || '/static/img/placeholder.svg';
+      const images_raw = document.getElementById('pImages').value.trim();
+      const images = images_raw ? images_raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean) : [];
       const thumb_url = document.getElementById('pThumb').value.trim();
       const description = document.getElementById('pDesc').value.trim();
       if (!title || !price || !category_id) return alert('Заполните название, цену и категорию');
       await api('/api/products', {
         method: 'POST',
-        body: JSON.stringify({title, price, category_id, image_url, thumb_url, description}),
+        body: JSON.stringify({title, price, category_id, image_url, images, thumb_url, description}),
       });
       document.getElementById('pTitle').value = '';
       document.getElementById('pPrice').value = '';
       document.getElementById('pCategory').value = '';
       document.getElementById('pImage').value = '';
+      document.getElementById('pImages').value = '';
       document.getElementById('pThumb').value = '';
       document.getElementById('pDesc').value = '';
       loadProducts();

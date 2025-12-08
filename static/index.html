@@ -91,6 +91,7 @@
       <div class="modal-image">
         <img id="modalImage" src="" alt="">
       </div>
+      <div class="modal-thumbs" id="modalThumbs"></div>
       <div class="modal-body">
         <div class="modal-title" id="modalTitle"></div>
         <div class="muted small" id="modalDesc"></div>
@@ -247,10 +248,12 @@
       els.productCount.textContent = `${filtered.length} позиций`;
 
       filtered.forEach(p => {
+        const photos = (p.photos && p.photos.length ? p.photos : [{image_url: p.image_url, thumb_url: p.thumb_url}]).filter(Boolean);
+        const firstPhoto = photos[0] || {};
         const card = document.createElement('div');
         card.className = 'card product';
         card.innerHTML = `
-          <div class="img"><img src="${p.thumb_url || p.image_url}" alt=""></div>
+          <div class="img"><img src="${firstPhoto.thumb_url || firstPhoto.image_url || '/static/img/placeholder.svg'}" alt=""></div>
           <div class="product-title">${p.title}</div>
           <div class="muted small">${p.description || 'Описание скоро будет'}</div>
           <div class="product-footer">
@@ -353,10 +356,23 @@
 
     function openProduct(p) {
       state.selectedProduct = p;
-      document.getElementById('modalImage').src = p.image_url;
+      const photos = (p.photos && p.photos.length ? p.photos : [{image_url: p.image_url, thumb_url: p.thumb_url}]).filter(Boolean);
+      const mainPhoto = photos[0] || {};
+      document.getElementById('modalImage').src = mainPhoto.image_url || mainPhoto.thumb_url || '/static/img/placeholder.svg';
       document.getElementById('modalTitle').textContent = p.title;
       document.getElementById('modalDesc').textContent = p.description || '';
       document.getElementById('modalPrice').textContent = fmtPrice(p.price);
+      const thumbsWrap = document.getElementById('modalThumbs');
+      thumbsWrap.innerHTML = '';
+      photos.forEach(photo => {
+        const btn = document.createElement('button');
+        btn.className = 'thumb-btn';
+        btn.innerHTML = `<img src="${photo.thumb_url || photo.image_url || '/static/img/placeholder.svg'}" alt="">`;
+        btn.onclick = () => {
+          document.getElementById('modalImage').src = photo.image_url || photo.thumb_url || '/static/img/placeholder.svg';
+        };
+        thumbsWrap.appendChild(btn);
+      });
       document.getElementById('productModal').classList.remove('hidden');
     }
 
