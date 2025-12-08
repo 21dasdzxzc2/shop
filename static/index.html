@@ -52,7 +52,13 @@
     <section class="panel">
       <div class="panel-top">
         <div class="panel-title">Товары</div>
-        <div class="hint" id="productCount"></div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div class="hint" id="productCount"></div>
+          <select id="sortSelect" class="pill ghost-sm">
+            <option value="asc">Цена ↑</option>
+            <option value="desc">Цена ↓</option>
+          </select>
+        </div>
       </div>
       <div class="grid" id="productGrid"></div>
     </section>
@@ -127,6 +133,7 @@
       categoryRow: document.getElementById('categoryRow'),
       productGrid: document.getElementById('productGrid'),
       productCount: document.getElementById('productCount'),
+      sortSelect: document.getElementById('sortSelect'),
       search: document.getElementById('search'),
       cartCounter: document.getElementById('cartCounter'),
       cartSheet: document.getElementById('cartSheet'),
@@ -197,10 +204,13 @@
     }
 
     async function loadProducts() {
-      let catId = state.activeCat3 || null;
-      let url = '/api/products';
-      if (catId) url += `?category_id=${catId}`;
-      const data = await fetchJSON(url);
+      const catId = state.activeCat3 || null;
+      if (!catId) {
+        state.products = [];
+        renderProducts();
+        return;
+      }
+      const data = await fetchJSON(`/api/products?category_id=${catId}`);
       state.products = data.items || [];
       renderProducts();
     }
@@ -284,8 +294,14 @@
       const grid = els.productGrid;
       grid.innerHTML = '';
       const q = els.search.value.trim().toLowerCase();
-      const filtered = state.products.filter(p => p.title.toLowerCase().includes(q));
-      els.productCount.textContent = `${filtered.length} позиций`;
+      let filtered = state.products.filter(p => p.title.toLowerCase().includes(q));
+      const sort = els.sortSelect.value;
+      filtered = filtered.sort((a, b) => {
+        const da = a.price || 0;
+        const db = b.price || 0;
+        return sort === 'desc' ? db - da : da - db;
+      });
+      els.productCount.textContent = state.activeCat3 ? `${filtered.length} позиций` : 'Выберите категорию';
 
       filtered.forEach(p => {
         const photos = (p.photos && p.photos.length ? p.photos : [{image_url: p.image_url, thumb_url: p.thumb_url}]).filter(Boolean);
@@ -429,6 +445,7 @@
 
     // bindings
     els.search.oninput = renderProducts;
+    els.sortSelect.onchange = renderProducts;
     document.getElementById('openCart').onclick = () => { refreshCart(); openCartSheet(); };
     document.getElementById('closeSheet').onclick = closeCartSheet;
     document.getElementById('checkoutBtn').onclick = checkout;
