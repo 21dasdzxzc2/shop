@@ -113,6 +113,7 @@
       cartCount: 0,
       selectedProduct: null,
       banned: false,
+      mode: 'samootsos',
     };
 
     if (tg) {
@@ -169,11 +170,21 @@
         method: 'POST',
         body: JSON.stringify({user_id: uid}),
       });
+      state.mode = res.mode || 'samootsos';
       state.banned = !!res.banned;
       if (state.banned) {
         document.getElementById('bannedScreen').classList.remove('hidden');
       } else {
         document.getElementById('bannedScreen').classList.add('hidden');
+      }
+      const contactBlock = document.querySelector('#contact')?.closest('.input.stacked');
+      const noteBlock = document.querySelector('#note')?.closest('.input.stacked');
+      if (state.mode === 'samopis') {
+        if (contactBlock) contactBlock.style.display = 'none';
+        if (noteBlock) noteBlock.style.display = 'none';
+      } else {
+        if (contactBlock) contactBlock.style.display = '';
+        if (noteBlock) noteBlock.style.display = '';
       }
       return state.banned;
     }
@@ -320,20 +331,24 @@
         alert('Корзина пуста.');
         return;
       }
-      const contact = els.contact.value.trim() || (state.user?.username ? '@' + state.user.username : '');
-      const note = els.note.value.trim();
+      const contact = state.mode === 'samopis' ? '' : (els.contact.value.trim() || (state.user?.username ? '@' + state.user.username : ''));
+      const note = state.mode === 'samopis' ? '' : els.note.value.trim();
       const tg_username = state.user?.username || '';
       const tg_name = [state.user?.first_name, state.user?.last_name].filter(Boolean).join(' ');
       const res = await fetchJSON('/api/cart/checkout', {
         method: 'POST',
         body: JSON.stringify({user_id: uid, contact, note, tg_username, tg_name}),
       });
-      if (tg?.showAlert) tg.showAlert(res.message || 'Заказ принят');
-      if (tg?.sendData) {
-        tg.sendData(JSON.stringify({action: 'checkout', user_id: uid, contact, note, tg_username, tg_name}));
+      if (state.mode === 'samopis' && res.redirect) {
+        window.location.href = res.redirect;
+      } else {
+        if (tg?.showAlert) tg.showAlert(res.message || 'Заказ принят');
+        if (tg?.sendData) {
+          tg.sendData(JSON.stringify({action: 'checkout', user_id: uid, contact, note, tg_username, tg_name}));
+        }
+        await clearCart();
+        closeCartSheet();
       }
-      await clearCart();
-      closeCartSheet();
     }
 
     function openProduct(p) {

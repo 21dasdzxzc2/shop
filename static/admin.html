@@ -95,6 +95,17 @@
 
     <section class="panel">
       <div class="panel-top">
+        <div class="panel-title">Режим оформления</div>
+      </div>
+      <p class="muted small">Самоотсос — стандартный (контакты/коммент). Самопис — без контактов, запрос уходит админу с заготовкой.</p>
+      <div style="display:flex; gap:10px; margin-top:8px;">
+        <button class="pill ghost" id="modeSamootsos">Самоотсос</button>
+        <button class="pill ghost" id="modeSamopis">Самопис</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-top">
         <div class="panel-title">Архив data</div>
       </div>
       <div class="input stacked" style="margin-top:8px;">
@@ -292,6 +303,25 @@
       loadBans();
     }
 
+    async function loadMode() {
+      const data = await api('/api/admin/mode');
+      const mode = data.mode || 'samootsos';
+      const samopisBtn = document.getElementById('modeSamopis');
+      const samootsosBtn = document.getElementById('modeSamootsos');
+      if (samopisBtn && samootsosBtn) {
+        samopisBtn.classList.toggle('accent', mode === 'samopis');
+        samootsosBtn.classList.toggle('accent', mode === 'samootsos');
+      }
+    }
+
+    async function setMode(mode) {
+      await api('/api/admin/mode', {
+        method: 'POST',
+        body: JSON.stringify({mode}),
+      });
+      loadMode();
+    }
+
     function downloadData() {
       const token = getToken();
       const url = `/api/admin/data/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
@@ -328,11 +358,14 @@
     document.getElementById('addBan').onclick = addBan;
     document.getElementById('downloadData').onclick = downloadData;
     document.getElementById('uploadData').onclick = uploadData;
+    document.getElementById('modeSamootsos').onclick = () => setMode('samootsos');
+    document.getElementById('modeSamopis').onclick = () => setMode('samopis');
 
     loadCats();
     loadProducts();
     loadLogs();
     loadBans();
+    loadMode();
   </script>
 </body>
 </html>

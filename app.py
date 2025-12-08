@@ -10,6 +10,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+from urllib.parse import quote_plus
 
 import requests
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
@@ -123,13 +124,18 @@ LOG_LIMIT = 200
 
 
 def _load_all_data() -> None:
-    global categories, products, carts, logs, bans  # noqa: PLW0603
+    global categories, products, carts, logs, bans, settings  # noqa: PLW0603
     categories = _load_json("categories.json", [])
     products = _load_json("products.json", [])
     carts_raw = _load_json("carts.json", {})
     carts = _normalize_carts(carts_raw)
     logs = _load_json("logs.json", [])
     bans = _load_json("bans.json", [])
+    settings = _load_json("settings.json", {"mode": "samootsos"})
+
+
+def _get_samopis_nick() -> str:
+    return os.environ.get("SAMOPIS_NICK", "").lstrip("@")
 
 
 _load_all_data()
@@ -518,27 +524,50 @@ def api_cart_checkout() -> Any:
         payload={"contact": contact, "note": note, "items": cart},
     )
 
-    if ADMIN_CHAT_ID:
-        lines = [
+    mode = settings.get("mode", "samootsos")
+    response: Dict[str, Any] = {"ok": True}
+
+    lines: List[str] = []
+    if mode == "samopis":
+        nick = _get_samopis_nick()
+        if nick:
+            lines.append(f"Доброго времени суток, {nick}!")
+        else:
+            lines.append("Доброго времени суток!")
+        lines.append("Хотел бы приобрести следующие товары:")
+    else:
+        lines.extend([
             "🛒 Новый заказ",
             f"user_id: {user_id}",
             f"tg: @{tg_username}" if tg_username else "tg: не указал",
-            f"контакт: {contact or '—'}",
-        ]
+        ])
         if tg_name:
             lines.append(f"имя: {tg_name}")
-        lines.append("Позиций:")
-        for row in items:
-            lines.append(f"- {row['product']['title']} x{row['qty']} = {int(row['subtotal'])}₽")
-        lines.append(f"Итого: {int(total)}₽")
+        lines.append(f"контакт: {contact or '—'}")
         if note:
             lines.append(f"Комментарий: {note}")
-        if not notify_admin("\n".join(lines)):
-            logger.warning("Failed to notify admin about checkout for user %s", user_id)
+
+    lines.append("Позиций:")
+    for row in items:
+        lines.append(f"- {row['product']['title']} x{row['qty']} = {int(row['subtotal'])}₽")
+    lines.append(f"Итого: {int(total)}₽")
+
+    if mode == "samopis":
+        nick = _get_samopis_nick()
+        if nick:
+            text = "\n".join(lines)
+            redirect_url = f"https://t.me/{nick}?text={quote_plus(text)}"
+            response["redirect"] = redirect_url
+            response["message"] = "Откройте диалог для оформления."
+    else:
+        if ADMIN_CHAT_ID:
+            if not notify_admin("\n".join(lines)):
+                logger.warning("Failed to notify admin about checkout for user %s", user_id)
+        response["message"] = "Заказ принят. Менеджер свяжется в Telegram."
 
     carts[int(user_id)] = {}
     _save_json("carts.json", carts)
-    return jsonify({"ok": True, "message": "Заказ принят. Менеджер свяжется в Telegram."})
+    return jsonify(response)
 
 
 @app.route("/api/admin/logs", methods=["GET"])
@@ -579,6 +608,20 @@ def api_admin_bans_delete(user_id: int) -> Any:
     _log_event("user_unbanned", user_id=user_id)
     _save_json("bans.json", bans)
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/mode", methods=["GET", "POST"])
+def api_admin_mode() -> Any:
+    _require_admin()
+    if request.method == "GET":
+        return jsonify({"mode": settings.get("mode", "samootsos")})
+    body = request.get_json(force=True, silent=True) or {}
+    mode = (body.get("mode") or "").strip()
+    if mode not in {"samootsos", "samopis"}:
+        return jsonify({"ok": False, "error": "invalid_mode"}), 400
+    settings["mode"] = mode
+    _save_json("settings.json", settings)
+    return jsonify({"ok": True, "mode": mode})
 
 
 def _create_data_zip(tmpdir: Path, name: str = "data.zip") -> Path:
@@ -660,13 +703,13 @@ def api_status() -> Any:
     try:
         user_id_int = int(user_id)
     except Exception:
-        return jsonify({"ok": True, "banned": False})
+        return jsonify({"ok": True, "banned": False, "mode": settings.get("mode", "samootsos")})
     banned = _is_banned(user_id_int)
     reason = ""
     if banned:
         match = next((b for b in bans if b.get("user_id") == user_id_int), None)
         reason = (match or {}).get("reason") or ""
-    return jsonify({"ok": True, "banned": banned, "reason": reason})
+    return jsonify({"ok": True, "banned": banned, "reason": reason, "mode": settings.get("mode", "samootsos")})
 
 
 @app.route("/telegram/webhook", methods=["POST"])
