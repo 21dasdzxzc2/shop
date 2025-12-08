@@ -30,6 +30,9 @@
         <label>Добавить категорию</label>
         <input id="catName" placeholder="Название">
         <input id="catIcon" placeholder="Эмодзи (опционально)">
+        <select id="catParent" style="margin-top:6px;">
+          <option value="">Без родителя (root)</option>
+        </select>
         <button class="pill accent" id="createCat" style="margin-top:8px;">Создать</button>
       </div>
       <div id="catList" style="margin-top:12px;"></div>
@@ -149,32 +152,63 @@
     function renderCats(data) {
       const box = document.getElementById('catList');
       box.innerHTML = '';
+      const parentsSelect = document.getElementById('catParent');
+      parentsSelect.innerHTML = `<option value="">Без родителя (root)</option>`;
       (data.items || []).forEach(cat => {
-        const row = document.createElement('div');
-        row.className = 'cart-row';
-        row.innerHTML = `
-          <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
-            <div class="muted small">ID: ${cat.id}</div>
-            <input class="cat-name" value="${cat.name}" style="width:100%; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff;">
-            <input class="cat-icon" value="${cat.icon || ''}" placeholder="Иконка/эмодзи" style="width:100%; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff;">
-          </div>
-          <div style="display:flex; flex-direction:column; gap:8px;">
-            <button class="pill ghost-sm save-cat">Сохранить</button>
-            <button class="pill ghost-sm delete-cat" style="color:#ef4444;">Удалить</button>
-          </div>
-        `;
-        row.querySelector('.save-cat').onclick = () => {
-          const name = row.querySelector('.cat-name').value.trim();
-          const icon = row.querySelector('.cat-icon').value.trim();
-          updateCat(cat.id, name, icon);
-        };
-        row.querySelector('.delete-cat').onclick = () => {
-          if (confirm(`Удалить категорию ${cat.name}?`)) {
-            deleteCat(cat.id);
-          }
-        };
-        box.appendChild(row);
+        parentsSelect.insertAdjacentHTML('beforeend', `<option value="${cat.id}">${cat.name}</option>`);
       });
+
+      // группируем по parent_id
+      const tree = {};
+      const roots = [];
+      (data.items || []).forEach(cat => {
+        tree[cat.id] = {...cat, children: []};
+      });
+      Object.values(tree).forEach(cat => {
+        if (cat.parent_id) {
+          const parent = tree[cat.parent_id];
+          if (parent) parent.children.push(cat);
+        } else {
+          roots.push(cat);
+        }
+      });
+
+      function renderLevel(nodes, level = 0) {
+        nodes.forEach(cat => {
+          const row = document.createElement('div');
+          row.className = 'cart-row';
+          row.style.paddingLeft = `${level * 12}px`;
+          row.innerHTML = `
+            <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+              <div class="muted small">ID: ${cat.id} ${cat.parent_id ? `· parent: ${cat.parent_id}` : ''}</div>
+              <input class="cat-name" value="${cat.name}" style="width:100%; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff;">
+              <input class="cat-icon" value="${cat.icon || ''}" placeholder="Иконка/эмодзи" style="width:100%; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff;">
+              <select class="cat-parent" style="padding:6px 8px; border-radius:8px; border:1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff;">
+                <option value="">Без родителя (root)</option>
+                ${Object.values(tree).map(p => `<option value="${p.id}" ${p.id === cat.parent_id ? 'selected' : ''}>${p.name}</option>`).join('')}
+              </select>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <button class="pill ghost-sm save-cat">Сохранить</button>
+              <button class="pill ghost-sm delete-cat" style="color:#ef4444;">Удалить</button>
+            </div>
+          `;
+          row.querySelector('.save-cat').onclick = () => {
+            const name = row.querySelector('.cat-name').value.trim();
+            const icon = row.querySelector('.cat-icon').value.trim();
+            const parent_id = row.querySelector('.cat-parent').value || null;
+            updateCat(cat.id, name, icon, parent_id);
+          };
+          row.querySelector('.delete-cat').onclick = () => {
+            if (confirm(`Удалить категорию ${cat.name}?`)) {
+              deleteCat(cat.id);
+            }
+          };
+          box.appendChild(row);
+          if (cat.children?.length) renderLevel(cat.children, level + 1);
+        });
+      }
+      renderLevel(roots);
       state.categories = data.items || [];
     }
 
@@ -186,21 +220,22 @@
     async function createCat() {
       const name = document.getElementById('catName').value.trim();
       const icon = document.getElementById('catIcon').value.trim();
+      const parent_id = document.getElementById('catParent').value.trim();
       if (!name) return alert('Укажите название');
       await api('/api/categories', {
         method: 'POST',
-        body: JSON.stringify({name, icon}),
+        body: JSON.stringify({name, icon, parent_id: parent_id || null}),
       });
       document.getElementById('catName').value = '';
       document.getElementById('catIcon').value = '';
       loadCats();
     }
 
-    async function updateCat(id, name, icon) {
+    async function updateCat(id, name, icon, parent_id) {
       if (!name) return alert('Название не может быть пустым');
       await api(`/api/categories/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({name, icon}),
+        body: JSON.stringify({name, icon, parent_id: parent_id || null}),
       });
       loadCats();
     }

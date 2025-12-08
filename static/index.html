@@ -196,9 +196,10 @@
       renderCategories();
     }
 
-    async function loadProducts(categoryId = null) {
+    async function loadProducts() {
+      let catId = state.activeCat3 || null;
       let url = '/api/products';
-      if (categoryId) url += `?category_id=${categoryId}`;
+      if (catId) url += `?category_id=${catId}`;
       const data = await fetchJSON(url);
       state.products = data.items || [];
       renderProducts();
@@ -217,27 +218,66 @@
     function renderCategories() {
       const row = els.categoryRow;
       row.innerHTML = '';
-      const allBtn = document.createElement('button');
-      allBtn.className = `chip ${state.activeCategory === null ? 'active' : ''}`;
-      allBtn.textContent = 'Все';
-      allBtn.onclick = () => {
-        state.activeCategory = null;
-        loadProducts();
-        renderCategories();
-      };
-      row.appendChild(allBtn);
+      const roots = state.categories.filter(c => !c.parent_id);
+      const level1Wrap = document.createElement('div');
+      const level2Wrap = document.createElement('div');
+      const level3Wrap = document.createElement('div');
+      [level1Wrap, level2Wrap, level3Wrap].forEach(w => { w.className = 'cat-level'; });
 
-      state.categories.forEach(cat => {
+      const makeChip = (cat, active, onClick) => {
         const btn = document.createElement('button');
-        btn.className = `chip ${state.activeCategory === cat.id ? 'active' : ''}`;
+        btn.className = `chip ${active ? 'active' : ''}`;
         btn.textContent = `${cat.icon || ''} ${cat.name}`;
-        btn.onclick = () => {
-          state.activeCategory = cat.id;
-          loadProducts(cat.id);
+        btn.onclick = onClick;
+        return btn;
+      };
+
+      roots.forEach(cat1 => {
+        level1Wrap.appendChild(makeChip(cat1, state.activeCat1 === cat1.id, () => {
+          state.activeCat1 = cat1.id;
+          state.activeCat2 = null;
+          state.activeCat3 = null;
           renderCategories();
-        };
-        row.appendChild(btn);
+          renderProducts();
+        }));
       });
+
+      const level2 = state.categories.filter(c => c.parent_id === state.activeCat1);
+      level2.forEach(cat2 => {
+        level2Wrap.appendChild(makeChip(cat2, state.activeCat2 === cat2.id, () => {
+          state.activeCat2 = cat2.id;
+          state.activeCat3 = null;
+          renderCategories();
+          renderProducts();
+        }));
+      });
+
+      const level3 = state.categories.filter(c => c.parent_id === state.activeCat2);
+      level3.forEach(cat3 => {
+        level3Wrap.appendChild(makeChip(cat3, state.activeCat3 === cat3.id, () => {
+          state.activeCat3 = cat3.id;
+          renderCategories();
+          renderProducts();
+        }));
+      });
+
+      const label = (text) => {
+        const span = document.createElement('div');
+        span.className = 'muted small';
+        span.textContent = text;
+        span.style.margin = '4px 0';
+        return span;
+      };
+      row.appendChild(label('Уровень 1'));
+      row.appendChild(level1Wrap);
+      if (level2.length) {
+        row.appendChild(label('Уровень 2'));
+        row.appendChild(level2Wrap);
+      }
+      if (level3.length) {
+        row.appendChild(label('Уровень 3 (выберите для товаров)'));
+        row.appendChild(level3Wrap);
+      }
     }
 
     function renderProducts() {

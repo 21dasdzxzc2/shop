@@ -122,9 +122,9 @@ body {
 
 .category-row {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   margin-top: 10px;
-  overflow-x: auto;
   padding-bottom: 4px;
 }
 .chip {
@@ -140,6 +140,11 @@ body {
   background: var(--accent);
   color: #0b1224;
   border-color: transparent;
+}
+.cat-level {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
 }
 
 .grid {

@@ -282,9 +282,10 @@ def api_categories() -> Any:
     body = request.get_json(force=True, silent=True) or {}
     name = (body.get("name") or "").strip()
     icon = (body.get("icon") or "").strip() or None
+    parent_id = body.get("parent_id")
     if not name:
         return jsonify({"ok": False, "error": "name required"}), 400
-    cat = {"id": next_id(categories), "name": name, "icon": icon}
+    cat = {"id": next_id(categories), "name": name, "icon": icon, "parent_id": int(parent_id) if parent_id else None}
     categories.append(cat)
     log_event("category_created", payload=cat)
     save_json("categories.json", categories)
@@ -301,9 +302,11 @@ def api_category_update(cat_id: int) -> Any:
         body = request.get_json(force=True, silent=True) or {}
         name = (body.get("name") or "").strip()
         icon = (body.get("icon") or "").strip()
+        parent_id = body.get("parent_id")
         if name:
             category["name"] = name
         category["icon"] = icon or None
+        category["parent_id"] = int(parent_id) if parent_id else None
         log_event("category_updated", payload=category)
         save_json("categories.json", categories)
         return jsonify(category)
