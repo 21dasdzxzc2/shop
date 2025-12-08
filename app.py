@@ -227,6 +227,30 @@ def admin_mode() -> str:
     return settings.get("mode", "samootsos")
 
 
+def build_photos(product: Dict[str, Any]) -> List[Dict[str, str]]:
+    photos = product.get("photos") or []
+    normalized: List[Dict[str, str]] = []
+
+    if photos and all(isinstance(p, str) for p in photos):
+        normalized = [{"image_url": p, "thumb_url": p} for p in photos if p]
+    elif photos and all(isinstance(p, dict) for p in photos):
+        for p in photos:
+            img = p.get("image_url") or p.get("thumb_url")
+            if img:
+                normalized.append(
+                    {
+                        "image_url": p.get("image_url") or img,
+                        "thumb_url": p.get("thumb_url") or img,
+                    }
+                )
+
+    if not normalized:
+        img = product.get("image_url") or "/static/img/placeholder.svg"
+        thumb = product.get("thumb_url") or img
+        normalized = [{"image_url": img, "thumb_url": thumb}]
+    return normalized
+
+
 @app.route("/")
 def health() -> Any:
     return {"ok": True}
@@ -298,20 +322,15 @@ def api_products() -> Any:
     if request.method == "GET":
         cid = request.args.get("category_id", type=int)
         items = [p for p in products if p["category_id"] == cid] if cid else products
-        normalized = []
+        resp = []
         for p in items:
-            photos = p.get("photos") or []
-            if not photos:
-                photos = [
-                    {
-                        "image_url": p.get("image_url") or "/static/img/placeholder.svg",
-                        "thumb_url": p.get("thumb_url") or p.get("image_url") or "/static/img/placeholder.svg",
-                    }
-                ]
             p_copy = dict(p)
-            p_copy["photos"] = photos
-            normalized.append(p_copy)
-        return jsonify({"items": normalized})
+            p_copy["photos"] = build_photos(p)
+            if p_copy["photos"]:
+                p_copy["image_url"] = p_copy["photos"][0]["image_url"]
+                p_copy["thumb_url"] = p_copy["photos"][0]["thumb_url"]
+            resp.append(p_copy)
+        return jsonify({"items": resp})
     if request.method == "DELETE":
         require_admin()
         pid = request.args.get("id", type=int)
@@ -361,6 +380,13 @@ def api_products() -> Any:
                 {
                     "image_url": main_url or url_clean,
                     "thumb_url": thumb or main_url or url_clean,
+                }
+            )
+        else:
+            photos.append(
+                {
+                    "image_url": url_clean,
+                    "thumb_url": url_clean,
                 }
             )
     if not photos:
