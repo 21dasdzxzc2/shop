@@ -205,9 +205,12 @@
 
     async function loadProducts() {
       const catId = state.activeCat3 || state.activeCat2 || state.activeCat1 || null;
-      let url = '/api/products';
-      if (catId) url += `?category_id=${catId}`;
-      const data = await fetchJSON(url);
+      if (!catId) {
+        state.products = [];
+        renderProducts();
+        return;
+      }
+      const data = await fetchJSON(`/api/products?category_id=${catId}`);
       state.products = data.items || [];
       renderProducts();
     }
@@ -301,7 +304,7 @@
         const db = b.price || 0;
         return sort === 'desc' ? db - da : da - db;
       });
-      els.productCount.textContent = state.activeCat3 ? `${filtered.length} позиций` : 'Выберите категорию';
+      els.productCount.textContent = filtered.length ? `${filtered.length} позиций` : 'Выберите категорию';
 
       filtered.forEach(p => {
         const photos = (p.photos && p.photos.length ? p.photos : [{image_url: p.image_url, thumb_url: p.thumb_url}]).filter(Boolean);
