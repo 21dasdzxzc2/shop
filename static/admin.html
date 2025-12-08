@@ -155,7 +155,9 @@
       const parentsSelect = document.getElementById('catParent');
       parentsSelect.innerHTML = `<option value="">Без родителя (root)</option>`;
       (data.items || []).forEach(cat => {
-        parentsSelect.insertAdjacentHTML('beforeend', `<option value="${cat.id}">${cat.name}</option>`);
+        const parent = (data.items || []).find(c => c.id === cat.parent_id);
+        const label = parent ? `${cat.name} (${parent.name})` : cat.name;
+        parentsSelect.insertAdjacentHTML('beforeend', `<option value="${cat.id}">${label}</option>`);
       });
 
       // группируем по parent_id

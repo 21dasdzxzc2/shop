@@ -204,13 +204,7 @@
     }
 
     async function loadProducts() {
-      const catId = state.activeCat3 || state.activeCat2 || state.activeCat1 || null;
-      if (!catId) {
-        state.products = [];
-        renderProducts();
-        return;
-      }
-      const data = await fetchJSON(`/api/products?category_id=${catId}`);
+      const data = await fetchJSON('/api/products');
       state.products = data.items || [];
       renderProducts();
     }
@@ -237,12 +231,7 @@
       const makeChip = (cat, active, onClick) => {
         const btn = document.createElement('button');
         btn.className = `chip ${active ? 'active' : ''}`;
-        let label = `${cat.icon || ''} ${cat.name}`;
-        if (cat.parent_id) {
-          const parent = state.categories.find(c => c.id === cat.parent_id);
-          if (parent) label += ` (${parent.name})`;
-        }
-        btn.textContent = label;
+        btn.textContent = `${cat.icon || ''} ${cat.name}`;
         btn.onclick = onClick;
         return btn;
       };
@@ -297,14 +286,32 @@
       const grid = els.productGrid;
       grid.innerHTML = '';
       const q = els.search.value.trim().toLowerCase();
-      let filtered = state.products.filter(p => p.title.toLowerCase().includes(q));
+      const selected = state.activeCat3 || state.activeCat2 || state.activeCat1 || null;
+      const descendantSet = new Set();
+      const byId = Object.fromEntries((state.categories || []).map(c => [c.id, c]));
+      if (selected) {
+        const stack = [selected];
+        while (stack.length) {
+          const cur = stack.pop();
+          if (!cur) continue;
+          descendantSet.add(cur);
+          state.categories.forEach(c => {
+            if (c.parent_id === cur) stack.push(c.id);
+          });
+        }
+      }
+      let filtered = state.products.filter(p => {
+        if (!selected) return false;
+        return descendantSet.has(p.category_id);
+      });
+      filtered = filtered.filter(p => p.title.toLowerCase().includes(q));
       const sort = els.sortSelect.value;
       filtered = filtered.sort((a, b) => {
         const da = a.price || 0;
         const db = b.price || 0;
         return sort === 'desc' ? db - da : da - db;
       });
-      els.productCount.textContent = filtered.length ? `${filtered.length} позиций` : 'Выберите категорию';
+      els.productCount.textContent = selected ? `${filtered.length} позиций` : 'Выберите категорию';
 
       filtered.forEach(p => {
         const photos = (p.photos && p.photos.length ? p.photos : [{image_url: p.image_url, thumb_url: p.thumb_url}]).filter(Boolean);
